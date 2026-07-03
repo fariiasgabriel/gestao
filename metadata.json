@@ -1,0 +1,6 @@
+{
+  "name": "Marketplace Manager",
+  "description": "A complete marketplace operations management dashboard including catalog, order tracking, dynamic financials, stock management, automatic purchase recommendations, and exportable reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

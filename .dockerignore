@@ -1,0 +1,20 @@
+# Dockerignore - Evita enviar arquivos desnecessários para o contexto de build do Docker
+node_modules
+dist
+.git
+.github
+.idea
+.vscode
+*.log
+.env
+.env.local
+.env.example
+
+# Arquivos do Backend
+backend/target
+backend/.mvn
+backend/.classpath
+backend/.project
+backend/.settings
+backend/.factorypath
+backend/bin
