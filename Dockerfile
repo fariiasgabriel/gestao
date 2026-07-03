@@ -13,7 +13,6 @@ RUN npm ci || npm install
 # Copia os arquivos necessários do frontend (configurações e código fonte)
 COPY vite.config.ts tsconfig.json index.html ./
 COPY src/ ./src/
-COPY assets/ ./assets/
 
 # Executa o build de produção (gera a pasta /app/dist)
 RUN npm run build
