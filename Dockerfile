@@ -14,8 +14,8 @@ RUN npm ci || npm install
 COPY vite.config.ts tsconfig.json index.html ./
 COPY src/ ./src/
 
-# Executa o build de produção (gera a pasta /app/dist)
-RUN npm run build
+# Executa o build de produção estático (gera apenas a pasta /app/dist)
+RUN npx vite build
 
 # =========================================================
 # ESTÁGIO 2: Build do Backend (Spring Boot + Maven)
