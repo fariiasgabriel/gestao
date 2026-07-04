@@ -41,12 +41,10 @@ export default function App() {
     setUsername(null);
   };
 
-  // If not authenticated, render the premium Login lock screen
   if (!token) {
     return <LoginView onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // Render the active operational view
   const renderViewContent = () => {
     switch (currentView) {
       case "dashboard":
@@ -77,18 +75,15 @@ export default function App() {
   return (
     <div className="flex bg-slate-50 min-h-screen text-slate-600 font-sans antialiased">
       {/* Sidebar Navigation Panel (256px wide) */}
-      <Sidebar 
-        currentView={currentView} 
-        onNavigate={setCurrentView} 
-        onLogout={handleLogout} 
+      <Sidebar
+        currentView={currentView}
+        onNavigate={setCurrentView}
+        onLogout={handleLogout}
       />
 
-      {/* Main Workspace Frame */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        {/* Horizontal Action Top bar */}
         <Header currentView={currentView} />
 
-        {/* Scrollable Work Environment */}
         <main className="flex-1 p-8 overflow-y-auto max-w-[1600px] w-full mx-auto">
           {renderViewContent()}
         </main>
