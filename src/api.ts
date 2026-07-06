@@ -6,13 +6,17 @@ const api = axios.create({
   baseURL: API_BASE,
   headers: {
     "Content-Type": "application/json",
+    // Initialize Authorization header if token exists in localStorage
+    ...(localStorage.getItem("token") ? { "Authorization": `Bearer ${localStorage.getItem("token")}` } : {}),
   },
 });
 
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
-    if (token && config.headers) {
+    // Ensure headers object exists
+    config.headers = config.headers || {};
+    if (token) {
       config.headers["Authorization"] = `Bearer ${token}`;
     }
     return config;
