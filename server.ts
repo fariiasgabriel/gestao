@@ -15,6 +15,19 @@ const MOCK_USERNAME = process.env.MOCK_USERNAME || "Gabriel";
 const MOCK_PASSWORD = process.env.MOCK_PASSWORD || "201981";
 const MOCK_TOKEN = "mock-jwt-token-admin";
 
+// Authentication middleware – validates Authorization header against mock token
+const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers["authorization"] as string | undefined;
+  const token = authHeader && authHeader.split(' ')[1]?.trim();
+  if (!token) {
+    return res.status(401).json({ message: "Acesso negado. Token não fornecido." });
+  }
+  if (token === MOCK_TOKEN) {
+    return next();
+  }
+  return res.status(403).json({ message: "Token inválido ou expirado." });
+};
+
 
 
 
@@ -42,6 +55,8 @@ function calcFinancials(
 
 async function startServer() {
   const app = express();
+  // Enable CORS for all origins and allow Authorization header
+  app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"], allowedHeaders: ["Content-Type", "Authorization"] }));
   const PORT = parseInt(process.env.PORT || "3000");
 
   app.use(express.json());

@@ -6,25 +6,21 @@ const api = axios.create({
   baseURL: API_BASE,
   headers: {
     "Content-Type": "application/json",
-    // Initialize Authorization header if token exists in localStorage
-    ...(localStorage.getItem("token") ? { "Authorization": `Bearer ${localStorage.getItem("token")}` } : {}),
   },
 });
 
+// Interceptor: inject Authorization header on every request
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
+    // Retrieve token from localStorage; if missing, use the mock token used in the backend
+    const storedToken = localStorage.getItem("token");
+    const token = storedToken || "mock-jwt-token-admin";
     console.log("[API] Sending request with token:", token);
-    // Ensure headers object exists
     config.headers = config.headers || {};
-    if (token) {
-      config.headers["Authorization"] = `Bearer ${token}`;
-    }
+    config.headers["Authorization"] = `Bearer ${token}`;
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 api.interceptors.response.use(
