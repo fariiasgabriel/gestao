@@ -66,7 +66,6 @@ public class MarketplaceService {
         if (!marketplaceRepository.existsById(id)) {
             throw new RuntimeException("Marketplace não encontrado com o ID: " + id);
         }
-        // Verify if orders are using this marketplace
         boolean inUse = orderRepository.findFilteredOrders(id, null, null, null, null).size() > 0;
         if (inUse) {
             throw new IllegalStateException("Não é possível excluir este marketplace pois há pedidos vinculados a ele");

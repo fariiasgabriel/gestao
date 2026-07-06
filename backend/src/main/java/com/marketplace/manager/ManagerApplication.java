@@ -14,8 +14,8 @@ public class ManagerApplication {
     public static void main(String[] args) {
         SpringApplication.run(ManagerApplication.class, args);
         System.out.println("=================================================");
-        System.out.println("Marketplace Operations Manager Backend is running!");
-        System.out.println("Open Swagger Docs at http://localhost:8080/swagger-ui.html");
+        System.out.println("Marketplace Manager Backend rodando!");
+        System.out.println("Swagger http://localhost:8080/swagger-ui.html");
         System.out.println("=================================================");
     }
 

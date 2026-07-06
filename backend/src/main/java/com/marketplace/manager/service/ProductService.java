@@ -44,21 +44,21 @@ public class ProductService {
     @Transactional(readOnly = true)
     public ProductDTO findById(Long id) {
         Product product = productRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Produto não encontrado com o ID: " + id));
+                .orElseThrow(() -> new RuntimeException("Produto não encontrado com o ID: " + id));
         return convertToDTO(product);
     }
 
     @Transactional
     public ProductDTO create(ProductDTO dto) {
         Category category = categoryRepository.findById(dto.getCategoriaId())
-            .orElseThrow(() -> new RuntimeException("Categoria não encontrada com o ID: " + dto.getCategoriaId()));
+                .orElseThrow(() -> new RuntimeException("Categoria não encontrada com o ID: " + dto.getCategoriaId()));
 
         Product product = Product.builder()
-            .nome(dto.getNome().trim())
-            .custo(dto.getCusto())
-            .quantidadeEstoque(dto.getQuantidadeEstoque())
-            .category(category)
-            .build();
+                .nome(dto.getNome().trim())
+                .custo(dto.getCusto())
+                .quantidadeEstoque(dto.getQuantidadeEstoque())
+                .category(category)
+                .build();
 
         return convertToDTO(productRepository.save(product));
     }
@@ -66,10 +66,10 @@ public class ProductService {
     @Transactional
     public ProductDTO update(Long id, ProductDTO dto) {
         Product product = productRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Produto não encontrado com o ID: " + id));
+                .orElseThrow(() -> new RuntimeException("Produto não encontrado com o ID: " + id));
 
         Category category = categoryRepository.findById(dto.getCategoriaId())
-            .orElseThrow(() -> new RuntimeException("Categoria não encontrada com o ID: " + dto.getCategoriaId()));
+                .orElseThrow(() -> new RuntimeException("Categoria não encontrada com o ID: " + dto.getCategoriaId()));
 
         product.setNome(dto.getNome().trim());
         product.setCusto(dto.getCusto());
@@ -94,12 +94,12 @@ public class ProductService {
 
     private ProductDTO convertToDTO(Product product) {
         return ProductDTO.builder()
-            .id(product.getId())
-            .nome(product.getNome())
-            .custo(product.getCusto())
-            .quantidadeEstoque(product.getQuantidadeEstoque())
-            .categoriaId(product.getCategory().getId())
-            .categoriaNome(product.getCategory().getNome())
-            .build();
+                .id(product.getId())
+                .nome(product.getNome())
+                .custo(product.getCusto())
+                .quantidadeEstoque(product.getQuantidadeEstoque())
+                .categoriaId(product.getCategory().getId())
+                .categoriaNome(product.getCategory().getNome())
+                .build();
     }
 }

@@ -4,16 +4,13 @@ import { createServer as createViteServer } from "vite";
 import { Pool } from "pg";
 
 // =============================================================
-// DATABASE CONNECTION — Supabase (PostgreSQL)
+// conexão banco de dados — Supabase (PostgreSQL)
 // =============================================================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// =============================================================
-// MOCK AUTH — Login fixo com token simples
-// =============================================================
 const MOCK_USERNAME = process.env.MOCK_USERNAME || "Gabriel";
 const MOCK_PASSWORD = process.env.MOCK_PASSWORD || "201981";
 const MOCK_TOKEN = "mock-jwt-token-admin";
@@ -32,9 +29,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
   }
 };
 
-// =============================================================
-// FINANCE HELPERS
-// =============================================================
+
 function calcFinancials(
   totalValorVenda: number,
   totalCustoSKU: number,
@@ -56,17 +51,13 @@ function calcFinancials(
   return { comissaoValor, lucroBruto, lucroLiquido, margemBruta, margemLiquida };
 }
 
-// =============================================================
-// SERVER
-// =============================================================
+
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000");
 
   app.use(express.json());
 
-  // --- INIT TABLES ---
-  // Cria as tabelas no Supabase se ainda não existirem
   await pool.query(`
     CREATE TABLE IF NOT EXISTS categorias (
       id SERIAL PRIMARY KEY,
@@ -125,7 +116,6 @@ async function startServer() {
       cnpj VARCHAR(30)
     );
   `).catch(async () => {
-    // Se a despesas falhou por conta de fornecedores não existir ainda, criar na ordem certa
     await pool.query(`
       CREATE TABLE IF NOT EXISTS fornecedores (
         id SERIAL PRIMARY KEY,
@@ -188,9 +178,6 @@ async function startServer() {
 
   console.log(">>> Tabelas verificadas/criadas no Supabase com sucesso.");
 
-  // ================================================================
-  // AUTH
-  // ================================================================
   app.post("/api/auth/login", (req, res) => {
     const { username, password } = req.body;
     if (username === MOCK_USERNAME && password === MOCK_PASSWORD) {
@@ -200,9 +187,7 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // CATEGORIES CRUD
-  // ================================================================
+
   app.get("/api/categories", async (req, res) => {
     try {
       const search = (req.query.search as string || "").toLowerCase();
@@ -259,9 +244,7 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // MARKETPLACES CRUD
-  // ================================================================
+
   app.get("/api/marketplaces", async (req, res) => {
     try {
       const search = (req.query.search as string || "").toLowerCase();
@@ -318,9 +301,7 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // SUPPLIERS CRUD
-  // ================================================================
+
   app.get("/api/suppliers", async (req, res) => {
     try {
       const { rows } = await pool.query(`SELECT id, nome, contato, telefone, cnpj FROM fornecedores ORDER BY nome`);
@@ -371,9 +352,7 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // PRODUCTS CRUD
-  // ================================================================
+
   app.get("/api/products", async (req, res) => {
     try {
       const search = (req.query.search as string || "").toLowerCase();
@@ -454,9 +433,7 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // EXPENSES CRUD
-  // ================================================================
+
   app.get("/api/expenses", async (req, res) => {
     try {
       const { rows } = await pool.query(`
@@ -500,7 +477,6 @@ async function startServer() {
 
         let pId: number;
 
-        // Criar novo produto on-the-fly
         if (produtoId === "new" && newProduct && newProduct.nome) {
           const catId = parseInt(newProduct.categoriaId);
           if (!newProduct.nome.trim() || isNaN(catId)) {
@@ -516,7 +492,6 @@ async function startServer() {
           if (isNaN(pId)) return res.status(400).json({ message: "Produto inválido." });
         }
 
-        // Atualiza estoque e custo do produto
         const { rows: prodRows } = await client.query(
           `UPDATE produtos SET quantidade_estoque = quantidade_estoque + $1, custo = $2 WHERE id = $3 RETURNING nome`,
           [qty, unitCost, pId]
@@ -564,7 +539,6 @@ async function startServer() {
 
       const expense = expRows[0];
 
-      // Estornar estoque se for entrada de produto
       if (expense.tipo === "PRODUTO" && expense.produto_id && expense.quantidade) {
         await client.query(
           `UPDATE produtos SET quantidade_estoque = GREATEST(0, quantidade_estoque - $1) WHERE id = $2`,
@@ -583,9 +557,6 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // ORDERS CRUD
-  // ================================================================
   app.get("/api/orders", async (req, res) => {
     try {
       const marketplaceId = req.query.marketplaceId ? parseInt(req.query.marketplaceId as string) : null;
@@ -629,7 +600,6 @@ async function startServer() {
 
       const { rows } = await pool.query(query, params);
 
-      // Formata para o frontend: produtoNome do primeiro item
       const result = rows.map(row => {
         const items = row.items || [];
         const firstItem = items[0] || {};
@@ -721,8 +691,8 @@ async function startServer() {
           valor_venda, lucro_bruto, lucro_liquido, margem_bruta, margem_liquida)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
         [parseInt(marketplaceId), comissaoTipo, fin.comissaoValor, Number(comissaoInformada),
-          Number(frete), Number(taxaFixa), totalValorVenda, fin.lucroBruto,
-          fin.lucroLiquido, fin.margemBruta, fin.margemLiquida]
+        Number(frete), Number(taxaFixa), totalValorVenda, fin.lucroBruto,
+        fin.lucroLiquido, fin.margemBruta, fin.margemLiquida]
       );
       const orderId = orderRows[0].id;
 
@@ -796,8 +766,8 @@ async function startServer() {
           frete=$5, taxa_fixa=$6, valor_venda=$7, lucro_bruto=$8, lucro_liquido=$9, margem_bruta=$10, margem_liquida=$11
          WHERE id=$12`,
         [parseInt(marketplaceId), comissaoTipo, fin.comissaoValor, Number(comissaoInformada),
-          Number(frete), Number(taxaFixa), totalValorVenda, fin.lucroBruto,
-          fin.lucroLiquido, fin.margemBruta, fin.margemLiquida, orderId]
+        Number(frete), Number(taxaFixa), totalValorVenda, fin.lucroBruto,
+        fin.lucroLiquido, fin.margemBruta, fin.margemLiquida, orderId]
       );
 
       await client.query(`DELETE FROM pedido_itens WHERE pedido_id=$1`, [orderId]);
@@ -843,9 +813,6 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // DASHBOARD
-  // ================================================================
   app.get("/api/dashboard", async (req, res) => {
     try {
       const { rows: orderStats } = await pool.query(`
@@ -872,6 +839,10 @@ async function startServer() {
         FROM produtos
       `);
 
+      // Stock value query
+      const { rows: stockValueRows } = await pool.query(`SELECT COALESCE(SUM(p.custo * p.quantidade_estoque),0) AS "totalEstoqueValor" FROM produtos p`);
+      const totalEstoqueValor = Number(stockValueRows[0].totalEstoqueValor);
+
       const { rows: catStats } = await pool.query(`SELECT COUNT(*) AS "categoriasCount" FROM categorias`);
       const { rows: mktCount } = await pool.query(`SELECT COUNT(*) AS "marketplacesCount" FROM marketplaces`);
 
@@ -879,7 +850,6 @@ async function startServer() {
       const totalVendido = Number(s.totalVendido);
       const totalPedidos = Number(s.totalPedidos);
 
-      // Top products
       const { rows: topProducts } = await pool.query(`
         SELECT pr.nome AS "produtoNome",
                SUM(pi.quantidade) AS "totalVendido",
@@ -891,7 +861,6 @@ async function startServer() {
         LIMIT 5
       `);
 
-      // Margins by category
       const { rows: marginsByCategory } = await pool.query(`
         SELECT c.nome AS "categoria",
                COALESCE(AVG(p.margem_bruta),0) AS "margemBruta",
@@ -903,7 +872,6 @@ async function startServer() {
         ORDER BY "margemLiquida" DESC
       `);
 
-      // Stats by marketplace
       const { rows: mktStats } = await pool.query(`
         SELECT m.nome AS "marketplace",
                COUNT(p.id) AS "totalPedidos",
@@ -915,7 +883,6 @@ async function startServer() {
         ORDER BY "totalVendido" DESC
       `);
 
-      // Monthly evolution (last 6 months)
       const { rows: monthlyEvolution } = await pool.query(`
         SELECT TO_CHAR(data_pedido, 'YYYY-MM') AS "mes",
                TO_CHAR(data_pedido, 'Mon/YY') AS "label",
@@ -940,6 +907,7 @@ async function startServer() {
           totalQtdVendida: Number(itemStats[0].totalQtdVendida),
           produtosCadastrados: Number(prodStats[0].produtosCadastrados),
           totalEstoque: Number(prodStats[0].totalEstoque),
+          totalEstoqueValor: totalEstoqueValor,
           categoriasCount: Number(catStats[0].categoriasCount),
           marketplacesCount: Number(mktCount[0].marketplacesCount),
           semEstoque: Number(prodStats[0].semEstoque),
@@ -955,9 +923,6 @@ async function startServer() {
     }
   });
 
-  // ================================================================
-  // FRONTEND STATIC / VITE DEV
-  // ================================================================
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

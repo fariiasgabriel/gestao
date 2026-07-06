@@ -61,10 +61,11 @@ export interface DashboardIndicators {
   totalQtdVendida: number;
   produtosCadastrados: number;
   totalEstoque: number;
+  totalEstoqueValor: number;
   categoriasCount: number;
   marketplacesCount: number;
-  semEstoque: number;
   estoqueBaixo: number;
+  semEstoque: number;
 }
 
 export interface TopProduct {

@@ -26,12 +26,11 @@ public class OrderController {
     @GetMapping
     @Operation(summary = "Listar pedidos com filtros avançados")
     public ResponseEntity<List<OrderResponseDTO>> getOrders(
-        @RequestParam(value = "marketplaceId", required = false) Long marketplaceId,
-        @RequestParam(value = "categoryId", required = false) Long categoryId,
-        @RequestParam(value = "productId", required = false) Long productId,
-        @RequestParam(value = "startDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-        @RequestParam(value = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate
-    ) {
+            @RequestParam(value = "marketplaceId", required = false) Long marketplaceId,
+            @RequestParam(value = "categoryId", required = false) Long categoryId,
+            @RequestParam(value = "productId", required = false) Long productId,
+            @RequestParam(value = "startDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(value = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
         return ResponseEntity.ok(orderService.findFiltered(marketplaceId, categoryId, productId, startDate, endDate));
     }
 
@@ -44,7 +43,8 @@ public class OrderController {
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
         } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao processar pedido: " + ex.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Erro ao processar pedido: " + ex.getMessage());
         }
     }
 

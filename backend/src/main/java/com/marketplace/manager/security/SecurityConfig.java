@@ -59,12 +59,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
-                        // Permit static resources for Frontend React + Vite
                         .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico", "/vite.svg").permitAll()
-                        // Swagger Documentation endpoints
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/api-docs/**")
                         .permitAll()
-                        // All other API endpoints must be authenticated
                         .anyRequest().authenticated());
 
         http.authenticationProvider(authenticationProvider());
@@ -76,10 +73,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedHeaders(Collections.singletonList("*")); // Libera todos os headers para testar
-                                                                         // configuration.setAllowedMethods(Arrays.asList("GET",
-                                                                         // "POST", "PUT", "DELETE", "OPTIONS",
-                                                                         // "PATCH"));
+        configuration.setAllowedHeaders(Collections.singletonList("*"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With"));
         configuration.setExposedHeaders(Collections.singletonList("Authorization"));
 

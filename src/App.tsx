@@ -18,7 +18,6 @@ export default function App() {
   const [username, setUsername] = useState<string | null>(localStorage.getItem("username"));
   const [currentView, setCurrentView] = useState<string>("dashboard");
 
-  // Sync token state on mount
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
     const storedUser = localStorage.getItem("username");

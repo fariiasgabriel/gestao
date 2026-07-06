@@ -197,6 +197,23 @@ export default function DashboardView() {
             <Package className="w-5 h-5" />
           </div>
         </div>
+{/* Stock Value Card */}
+<div id="metric-stock-value" className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start justify-between">
+  <div>
+    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+      Valor Total em Estoque
+    </span>
+    <h4 className="text-xl font-extrabold text-emerald-900 tracking-tight">
+      {formatBRL(indicators.totalEstoqueValor)}
+    </h4>
+    <span className="text-xs text-emerald-600 font-medium block mt-1.5 font-mono">
+      ★ Valor do estoque disponível
+    </span>
+  </div>
+  <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+    <Package className="w-5 h-5" />
+  </div>
+</div>
 
         {/* Categorias & Marketplaces count */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-start justify-between">

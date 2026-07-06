@@ -66,7 +66,6 @@ public class CategoryService {
         if (!categoryRepository.existsById(id)) {
             throw new RuntimeException("Categoria não encontrada com o ID: " + id);
         }
-        // Verify if category is used in products
         if (!productRepository.findByCategoryId(id).isEmpty()) {
             throw new IllegalStateException("Não é possível excluir esta categoria pois ela está vinculada a produtos");
         }
