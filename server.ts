@@ -1,1413 +1,963 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import { createServer as createViteServer } from "vite";
+import { Pool } from "pg";
 
-// Set up simple local database persistence in db.json
-const DB_FILE = path.join(process.cwd(), "db.json");
+// =============================================================
+// DATABASE CONNECTION — Supabase (PostgreSQL)
+// =============================================================
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-interface Category {
-  id: number;
-  nome: string;
-}
+// =============================================================
+// MOCK AUTH — Login fixo com token simples
+// =============================================================
+const MOCK_USERNAME = process.env.MOCK_USERNAME || "Gabriel";
+const MOCK_PASSWORD = process.env.MOCK_PASSWORD || "201981";
+const MOCK_TOKEN = "mock-jwt-token-admin";
 
-interface Marketplace {
-  id: number;
-  nome: string;
-}
-
-interface Product {
-  id: number;
-  nome: string;
-  custo: number;
-  quantidadeEstoque: number;
-  categoriaId: number;
-}
-
-interface OrderItem {
-  produtoId: number;
-  quantidade: number;
-  valorVenda: number;
-  categoriaId: number;
-  produtoNome?: string;
-  produtoCusto?: number;
-}
-
-interface Order {
-  id: number;
-  produtoId: number;
-  categoriaId: number;
-  marketplaceId: number;
-  quantidade: number;
-  valorVenda: number;
-  comissaoTipo: "PERCENTUAL" | "VALOR";
-  comissaoValor: number; // For percentual, this will be calculated or stored
-  comissaoInformada: number; // Value input by user (e.g. 10 for 10% or R$10)
-  frete: number;
-  taxaFixa: number;
-  lucroBruto: number;
-  lucroLiquido: number;
-  margemBruta: number;
-  margemLiquida: number;
-  dataPedido: string;
-  items?: OrderItem[];
-}
-
-interface Supplier {
-  id: number;
-  nome: string;
-  contato?: string;
-  telefone?: string;
-  cnpj?: string;
-}
-
-interface Expense {
-  id: number;
-  tipo: "PRODUTO" | "GERAL";
-  descricao: string;
-  produtoId?: number;
-  fornecedorId?: number;
-  quantidade?: number;
-  custoUnitario?: number;
-  valor: number;
-  data: string;
-}
-
-interface Database {
-  categories: Category[];
-  marketplaces: Marketplace[];
-  products: Product[];
-  orders: Order[];
-  expenses?: Expense[];
-  suppliers?: Supplier[];
-}
-
-const DEFAULT_DB: Database = {
-  categories: [
-    { id: 1, nome: "Eletrônicos" },
-    { id: 2, nome: "Eletrodomésticos" },
-    { id: 3, nome: "Moda & Calçados" },
-    { id: 4, nome: "Casa & Decoração" },
-    { id: 5, nome: "Esportes & Lazer" }
-  ],
-  marketplaces: [
-    { id: 1, nome: "Mercado Livre" },
-    { id: 2, nome: "Shopee" },
-    { id: 3, nome: "Amazon" },
-    { id: 4, nome: "Magalu" },
-    { id: 5, nome: "Shein" }
-  ],
-  products: [
-    { id: 1, nome: "Smartphone Android 128GB", custo: 800.00, quantidadeEstoque: 25, categoriaId: 1 },
-    { id: 2, nome: "Fone de Ouvido Bluetooth", custo: 45.00, quantidadeEstoque: 120, categoriaId: 1 },
-    { id: 3, nome: "Cafeteira Expresso Italiana", custo: 220.00, quantidadeEstoque: 15, categoriaId: 2 },
-    { id: 4, nome: "Camiseta Algodão Pima Premium", custo: 35.00, quantidadeEstoque: 200, categoriaId: 3 },
-    { id: 5, nome: "Cadeira Gamer Ergonômica", custo: 350.00, quantidadeEstoque: 8, categoriaId: 4 },
-    { id: 6, nome: "Smartwatch Sport GPS", custo: 150.00, quantidadeEstoque: 45, categoriaId: 1 },
-    { id: 7, nome: "Teclado Mecânico RGB Hot-swap", custo: 110.00, quantidadeEstoque: 32, categoriaId: 1 },
-    { id: 8, nome: "Jogo de Panelas de Cerâmica (5pçs)", custo: 180.00, quantidadeEstoque: 14, categoriaId: 4 },
-    { id: 9, nome: "Mochila Impermeável Urban", custo: 48.00, quantidadeEstoque: 60, categoriaId: 3 },
-    { id: 10, nome: "Garrafa Térmica Inox 1L", custo: 30.00, quantidadeEstoque: 95, categoriaId: 5 }
-  ],
-  orders: [],
-  expenses: [],
-  suppliers: [
-    { id: 1, nome: "Distribuidora Eletrônica Sul", contato: "Carlos Silva", telefone: "(11) 98765-4321", cnpj: "12.345.678/0001-90" },
-    { id: 2, nome: "Importadora Global Ltda", contato: "Mariana Souza", telefone: "(21) 97654-3210", cnpj: "98.765.432/0001-09" },
-    { id: 3, nome: "Tecnologia e Varejo Brasil", contato: "Roberto Alencar", telefone: "(31) 96543-2109", cnpj: "45.678.901/0001-23" }
-  ]
-};
-
-const seedExpenses = (): Expense[] => {
-  const expenses: Expense[] = [];
-  const baseTime = new Date();
-  
-  // Seed some general expenses spanning the last 3 months
-  const generalSeeds = [
-    { desc: "Aluguel do Galpão de Distribuição", valor: 1500, daysAgo: 65 },
-    { desc: "Campanha Meta Ads - Coleção Inverno", valor: 650, daysAgo: 58 },
-    { desc: "Kit de Caixas de Papelão e Embalagens", valor: 180, daysAgo: 45 },
-    { desc: "Licença ERP Bling / Tiny Hub", valor: 140, daysAgo: 35 },
-    { desc: "Aluguel do Galpão de Distribuição", valor: 1500, daysAgo: 32 },
-    { desc: "Campanhas Google Shopping", valor: 800, daysAgo: 28 },
-    { desc: "Investimento em Sacolas Kraft Premium", valor: 320, daysAgo: 18 },
-    { desc: "Aluguel do Galpão de Distribuição", valor: 1500, daysAgo: 2 },
-    { desc: "Serviço de Coleta de Encomendas Meli", valor: 250, daysAgo: 1 }
-  ];
-
-  // Seed some product stock inflows spanning the last 2 months
-  const productSeeds = [
-    { prodId: 2, qty: 60, custoUnit: 42, daysAgo: 60 },  // Fone Bluetooth
-    { prodId: 4, qty: 150, custoUnit: 32, daysAgo: 40 }, // Camiseta Algodão
-    { prodId: 7, qty: 30, custoUnit: 105, daysAgo: 25 }, // Teclado Mecânico
-    { prodId: 10, qty: 80, custoUnit: 28, daysAgo: 12 }  // Garrafa Térmica
-  ];
-
-  let id = 1;
-
-  generalSeeds.forEach(item => {
-    const d = new Date(baseTime);
-    d.setDate(d.getDate() - item.daysAgo);
-    expenses.push({
-      id: id++,
-      tipo: "GERAL",
-      descricao: item.desc,
-      valor: item.valor,
-      data: d.toISOString()
-    });
-  });
-
-  productSeeds.forEach(item => {
-    const d = new Date(baseTime);
-    d.setDate(d.getDate() - item.daysAgo);
-    const prod = DEFAULT_DB.products.find(p => p.id === item.prodId);
-    const prodName = prod ? prod.nome : "Produto Importado";
-    expenses.push({
-      id: id++,
-      tipo: "PRODUTO",
-      descricao: `Entrada de Estoque: ${prodName}`,
-      produtoId: item.prodId,
-      quantidade: item.qty,
-      custoUnitario: item.custoUnit,
-      valor: Number((item.qty * item.custoUnit).toFixed(2)),
-      data: d.toISOString()
-    });
-  });
-
-  return expenses;
-};
-
-// Seed historical orders to make dashboard gorgeous right away
-const seedOrders = () => {
-  const orders: Order[] = [];
-  const baseTime = new Date();
-  
-  // Helper to calculate financials
-  const calculateFinancials = (
-    custo: number,
-    quantidade: number,
-    valorVenda: number,
-    frete: number,
-    taxaFixa: number,
-    comissaoTipo: "PERCENTUAL" | "VALOR",
-    comissaoInformada: number
-  ) => {
-    let comissaoValor = 0;
-    if (comissaoTipo === "PERCENTUAL") {
-      comissaoValor = Number(((comissaoInformada / 100) * valorVenda).toFixed(2));
-    } else {
-      comissaoValor = comissaoInformada;
-    }
-
-    const lucroBruto = Number((valorVenda - frete - taxaFixa - comissaoValor).toFixed(2));
-    const lucroLiquido = Number((lucroBruto - (custo * quantidade)).toFixed(2));
-    const margemBruta = valorVenda > 0 ? Number(((lucroBruto / valorVenda) * 100).toFixed(2)) : 0;
-    const margemLiquida = valorVenda > 0 ? Number(((lucroLiquido / valorVenda) * 100).toFixed(2)) : 0;
-
-    return { comissaoValor, lucroBruto, lucroLiquido, margemBruta, margemLiquida };
-  };
-
-  // 12 mock orders across different dates (last 3 months)
-  const orderSeedsData = [
-    { prodId: 1, catId: 1, mktId: 1, qty: 1, venda: 1200, frete: 40, taxa: 5, cTipo: "PERCENTUAL" as const, cVal: 16, daysAgo: 50 },
-    { prodId: 2, catId: 1, mktId: 2, qty: 3, venda: 270, frete: 15, taxa: 3, cTipo: "VALOR" as const, cVal: 30, daysAgo: 45 },
-    { prodId: 3, catId: 2, mktId: 3, qty: 1, venda: 450, frete: 35, taxa: 10, cTipo: "PERCENTUAL" as const, cVal: 15, daysAgo: 38 },
-    { prodId: 4, catId: 3, mktId: 2, qty: 5, venda: 375, frete: 20, taxa: 5, cTipo: "PERCENTUAL" as const, cVal: 18, daysAgo: 30 },
-    { prodId: 5, catId: 4, mktId: 1, qty: 1, venda: 699, frete: 50, taxa: 15, cTipo: "PERCENTUAL" as const, cVal: 16, daysAgo: 25 },
-    { prodId: 6, catId: 1, mktId: 4, qty: 2, venda: 580, frete: 25, taxa: 5, cTipo: "VALOR" as const, cVal: 60, daysAgo: 18 },
-    { prodId: 7, catId: 1, mktId: 1, qty: 1, venda: 250, frete: 15, taxa: 5, cTipo: "PERCENTUAL" as const, cVal: 16, daysAgo: 14 },
-    { prodId: 8, catId: 4, mktId: 3, qty: 2, venda: 600, frete: 40, taxa: 10, cTipo: "PERCENTUAL" as const, cVal: 15, daysAgo: 10 },
-    { prodId: 9, catId: 3, mktId: 5, qty: 4, venda: 320, frete: 18, taxa: 4, cTipo: "PERCENTUAL" as const, cVal: 20, daysAgo: 7 },
-    { prodId: 10, catId: 5, mktId: 2, qty: 3, venda: 210, frete: 12, taxa: 3, cTipo: "VALOR" as const, cVal: 21, daysAgo: 3 },
-    { prodId: 1, catId: 1, mktId: 3, qty: 1, venda: 1250, frete: 0, taxa: 12, cTipo: "PERCENTUAL" as const, cVal: 15, daysAgo: 1 },
-    { prodId: 3, catId: 2, mktId: 1, qty: 1, venda: 440, frete: 28, taxa: 5, cTipo: "PERCENTUAL" as const, cVal: 16, daysAgo: 0 }
-  ];
-
-  orderSeedsData.forEach((item, index) => {
-    const prod = DEFAULT_DB.products.find(p => p.id === item.prodId);
-    if (prod) {
-      const fin = calculateFinancials(
-        prod.custo,
-        item.qty,
-        item.venda,
-        item.frete,
-        item.taxa,
-        item.cTipo,
-        item.cVal
-      );
-
-      const d = new Date(baseTime);
-      d.setDate(d.getDate() - item.daysAgo);
-
-      orders.push({
-        id: index + 1,
-        produtoId: item.prodId,
-        categoriaId: item.catId,
-        marketplaceId: item.mktId,
-        quantidade: item.qty,
-        valorVenda: item.venda,
-        comissaoTipo: item.cTipo,
-        comissaoValor: fin.comissaoValor,
-        comissaoInformada: item.cVal,
-        frete: item.frete,
-        taxaFixa: item.taxa,
-        lucroBruto: fin.lucroBruto,
-        lucroLiquido: fin.lucroLiquido,
-        margemBruta: fin.margemBruta,
-        margemLiquida: fin.margemLiquida,
-        dataPedido: d.toISOString()
-      });
-
-      // Adjust stock in the mock list
-      prod.quantidadeEstoque = Math.max(0, prod.quantidadeEstoque - item.qty);
-    }
-  });
-
-  return orders;
-};
-
-// Initial DB configuration
-if (!fs.existsSync(DB_FILE)) {
-  const initialDb = { ...DEFAULT_DB };
-  initialDb.orders = seedOrders();
-  initialDb.expenses = seedExpenses();
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), "utf8");
-}
-
-const getDatabase = (): Database => {
-  try {
-    const data = fs.readFileSync(DB_FILE, "utf8");
-    const db = JSON.parse(data);
-    let changed = false;
-    if (!db.expenses) {
-      db.expenses = seedExpenses();
-      changed = true;
-    }
-    if (!db.suppliers) {
-      db.suppliers = DEFAULT_DB.suppliers || [];
-      changed = true;
-    }
-    if (changed) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf8");
-    }
-    return db;
-  } catch (err) {
-    return DEFAULT_DB;
+const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) {
+    res.status(401).json({ message: "Acesso negado. Token não fornecido." });
+    return;
+  }
+  if (token === MOCK_TOKEN) {
+    next();
+  } else {
+    res.status(403).json({ message: "Token inválido ou expirado." });
   }
 };
 
-const saveDatabase = (db: Database) => {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf8");
-};
-
-const ensureOrderItems = (o: Order, db: Database): Order & { items: OrderItem[] } => {
-  if (!o.items || o.items.length === 0) {
-    const prod = db.products.find(p => p.id === o.produtoId);
-    o.items = [
-      {
-        produtoId: o.produtoId,
-        quantidade: o.quantidade,
-        valorVenda: o.valorVenda,
-        categoriaId: o.categoriaId || (prod ? prod.categoriaId : 0),
-        produtoNome: prod ? prod.nome : "Produto Removido",
-        produtoCusto: prod ? prod.custo : 0
-      }
-    ];
+// =============================================================
+// FINANCE HELPERS
+// =============================================================
+function calcFinancials(
+  totalValorVenda: number,
+  totalCustoSKU: number,
+  frete: number,
+  taxaFixa: number,
+  comissaoTipo: string,
+  comissaoInformada: number
+) {
+  let comissaoValor = 0;
+  if (comissaoTipo === "PERCENTUAL") {
+    comissaoValor = Number(((comissaoInformada / 100) * totalValorVenda).toFixed(2));
+  } else {
+    comissaoValor = Number(comissaoInformada);
   }
-  return o as Order & { items: OrderItem[] };
-};
+  const lucroBruto = Number((totalValorVenda - frete - taxaFixa - comissaoValor).toFixed(2));
+  const lucroLiquido = Number((lucroBruto - totalCustoSKU).toFixed(2));
+  const margemBruta = totalValorVenda > 0 ? Number(((lucroBruto / totalValorVenda) * 100).toFixed(2)) : 0;
+  const margemLiquida = totalValorVenda > 0 ? Number(((lucroLiquido / totalValorVenda) * 100).toFixed(2)) : 0;
+  return { comissaoValor, lucroBruto, lucroLiquido, margemBruta, margemLiquida };
+}
 
+// =============================================================
+// SERVER
+// =============================================================
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "3000");
 
   app.use(express.json());
 
-  // Security Token Middleware (Simulating JWT Authentication)
-  const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const authHeader = req.headers["authorization"];
-    const token = authHeader && authHeader.split(" ")[1];
+  // --- INIT TABLES ---
+  // Cria as tabelas no Supabase se ainda não existirem
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS categorias (
+      id SERIAL PRIMARY KEY,
+      nome VARCHAR(100) NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS marketplaces (
+      id SERIAL PRIMARY KEY,
+      nome VARCHAR(100) NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS produtos (
+      id SERIAL PRIMARY KEY,
+      nome VARCHAR(150) NOT NULL,
+      custo NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (custo >= 0),
+      quantidade_estoque INT NOT NULL DEFAULT 0 CHECK (quantidade_estoque >= 0),
+      categoria_id INT NOT NULL REFERENCES categorias(id) ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS pedidos (
+      id SERIAL PRIMARY KEY,
+      marketplace_id INT NOT NULL REFERENCES marketplaces(id) ON DELETE RESTRICT,
+      comissao_tipo VARCHAR(20) NOT NULL,
+      comissao_valor NUMERIC(10,2) NOT NULL DEFAULT 0,
+      comissao_informada NUMERIC(10,2) NOT NULL DEFAULT 0,
+      frete NUMERIC(10,2) NOT NULL DEFAULT 0,
+      taxa_fixa NUMERIC(10,2) NOT NULL DEFAULT 0,
+      valor_venda NUMERIC(10,2) NOT NULL DEFAULT 0,
+      lucro_bruto NUMERIC(10,2) NOT NULL DEFAULT 0,
+      lucro_liquido NUMERIC(10,2) NOT NULL DEFAULT 0,
+      margem_bruta NUMERIC(10,2) NOT NULL DEFAULT 0,
+      margem_liquida NUMERIC(10,2) NOT NULL DEFAULT 0,
+      data_pedido TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS pedido_itens (
+      id SERIAL PRIMARY KEY,
+      pedido_id INT NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+      produto_id INT NOT NULL REFERENCES produtos(id) ON DELETE RESTRICT,
+      categoria_id INT NOT NULL REFERENCES categorias(id) ON DELETE RESTRICT,
+      quantidade INT NOT NULL CHECK (quantidade > 0),
+      valor_venda NUMERIC(10,2) NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS despesas (
+      id SERIAL PRIMARY KEY,
+      tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('PRODUTO','GERAL')),
+      descricao VARCHAR(255) NOT NULL,
+      produto_id INT REFERENCES produtos(id) ON DELETE SET NULL,
+      fornecedor_id INT REFERENCES fornecedores(id) ON DELETE SET NULL,
+      quantidade INT,
+      custo_unitario NUMERIC(10,2),
+      valor NUMERIC(10,2) NOT NULL DEFAULT 0,
+      data TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS fornecedores (
+      id SERIAL PRIMARY KEY,
+      nome VARCHAR(150) NOT NULL,
+      contato VARCHAR(100),
+      telefone VARCHAR(30),
+      cnpj VARCHAR(30)
+    );
+  `).catch(async () => {
+    // Se a despesas falhou por conta de fornecedores não existir ainda, criar na ordem certa
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS fornecedores (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(150) NOT NULL,
+        contato VARCHAR(100),
+        telefone VARCHAR(30),
+        cnpj VARCHAR(30)
+      );
+      CREATE TABLE IF NOT EXISTS categorias (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(100) NOT NULL UNIQUE
+      );
+      CREATE TABLE IF NOT EXISTS marketplaces (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(100) NOT NULL UNIQUE
+      );
+      CREATE TABLE IF NOT EXISTS produtos (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(150) NOT NULL,
+        custo NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (custo >= 0),
+        quantidade_estoque INT NOT NULL DEFAULT 0 CHECK (quantidade_estoque >= 0),
+        categoria_id INT NOT NULL REFERENCES categorias(id) ON DELETE RESTRICT
+      );
+      CREATE TABLE IF NOT EXISTS pedidos (
+        id SERIAL PRIMARY KEY,
+        marketplace_id INT NOT NULL REFERENCES marketplaces(id) ON DELETE RESTRICT,
+        comissao_tipo VARCHAR(20) NOT NULL,
+        comissao_valor NUMERIC(10,2) NOT NULL DEFAULT 0,
+        comissao_informada NUMERIC(10,2) NOT NULL DEFAULT 0,
+        frete NUMERIC(10,2) NOT NULL DEFAULT 0,
+        taxa_fixa NUMERIC(10,2) NOT NULL DEFAULT 0,
+        valor_venda NUMERIC(10,2) NOT NULL DEFAULT 0,
+        lucro_bruto NUMERIC(10,2) NOT NULL DEFAULT 0,
+        lucro_liquido NUMERIC(10,2) NOT NULL DEFAULT 0,
+        margem_bruta NUMERIC(10,2) NOT NULL DEFAULT 0,
+        margem_liquida NUMERIC(10,2) NOT NULL DEFAULT 0,
+        data_pedido TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS pedido_itens (
+        id SERIAL PRIMARY KEY,
+        pedido_id INT NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+        produto_id INT NOT NULL REFERENCES produtos(id) ON DELETE RESTRICT,
+        categoria_id INT NOT NULL REFERENCES categorias(id) ON DELETE RESTRICT,
+        quantidade INT NOT NULL CHECK (quantidade > 0),
+        valor_venda NUMERIC(10,2) NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS despesas (
+        id SERIAL PRIMARY KEY,
+        tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('PRODUTO','GERAL')),
+        descricao VARCHAR(255) NOT NULL,
+        produto_id INT REFERENCES produtos(id) ON DELETE SET NULL,
+        fornecedor_id INT REFERENCES fornecedores(id) ON DELETE SET NULL,
+        quantidade INT,
+        custo_unitario NUMERIC(10,2),
+        valor NUMERIC(10,2) NOT NULL DEFAULT 0,
+        data TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+  });
 
-    if (!token) {
-      res.status(401).json({ message: "Acesso negado. Token não fornecido." });
-      return;
-    }
+  console.log(">>> Tabelas verificadas/criadas no Supabase com sucesso.");
 
-    if (token === "mock-jwt-token-admin") {
-      next();
-    } else {
-      res.status(403).json({ message: "Token inválido ou expirado." });
-    }
-  };
-
-  // --- API ROUTES ---
-
-  // Auth
+  // ================================================================
+  // AUTH
+  // ================================================================
   app.post("/api/auth/login", (req, res) => {
     const { username, password } = req.body;
-    if (username === "Gabriel" && password === "201981") {
-      res.json({
-        token: "mock-jwt-token-admin",
-        username: "Gabriel",
-        role: "ADMIN"
-      });
+    if (username === MOCK_USERNAME && password === MOCK_PASSWORD) {
+      res.json({ token: MOCK_TOKEN, username: MOCK_USERNAME, role: "ADMIN" });
     } else {
       res.status(401).json({ message: "Usuário ou senha inválidos." });
     }
   });
 
-  // Categories CRUD
-  app.get("/api/categories", (req, res) => {
-    const db = getDatabase();
-    const search = (req.query.search as string || "").toLowerCase();
-    let result = db.categories;
-
-    if (search) {
-      result = result.filter(c => c.nome.toLowerCase().includes(search));
-    }
-
-    res.json(result);
-  });
-
-  app.post("/api/categories", authenticateToken, (req, res) => {
-    const { nome } = req.body;
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "O nome da categoria é obrigatório." });
-      return;
-    }
-
-    const db = getDatabase();
-    const newId = db.categories.length > 0 ? Math.max(...db.categories.map(c => c.id)) + 1 : 1;
-    const newCategory: Category = { id: newId, nome: nome.trim() };
-    
-    db.categories.push(newCategory);
-    saveDatabase(db);
-    res.status(201).json(newCategory);
-  });
-
-  app.put("/api/categories/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const { nome } = req.body;
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "O nome da categoria é obrigatório." });
-      return;
-    }
-
-    const db = getDatabase();
-    const index = db.categories.findIndex(c => c.id === id);
-    if (index === -1) {
-      res.status(404).json({ message: "Categoria não encontrada." });
-      return;
-    }
-
-    db.categories[index].nome = nome.trim();
-    saveDatabase(db);
-    res.json(db.categories[index]);
-  });
-
-  app.delete("/api/categories/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const db = getDatabase();
-
-    // Soft delete / disassociate category from products
-    db.products = db.products.map(p => {
-      if (p.categoriaId === id) {
-        return { ...p, categoriaId: 0 };
-      }
-      return p;
-    });
-
-    const filtered = db.categories.filter(c => c.id !== id);
-    if (filtered.length === db.categories.length) {
-      res.status(404).json({ message: "Categoria não encontrada." });
-      return;
-    }
-
-    db.categories = filtered;
-    saveDatabase(db);
-    res.json({ message: "Categoria excluída com sucesso." });
-  });
-
-  // Marketplaces CRUD
-  app.get("/api/marketplaces", (req, res) => {
-    const db = getDatabase();
-    const search = (req.query.search as string || "").toLowerCase();
-    let result = db.marketplaces;
-
-    if (search) {
-      result = result.filter(m => m.nome.toLowerCase().includes(search));
-    }
-
-    res.json(result);
-  });
-
-  app.post("/api/marketplaces", authenticateToken, (req, res) => {
-    const { nome } = req.body;
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "O nome do marketplace é obrigatório." });
-      return;
-    }
-
-    const db = getDatabase();
-    const newId = db.marketplaces.length > 0 ? Math.max(...db.marketplaces.map(m => m.id)) + 1 : 1;
-    const newMkt: Marketplace = { id: newId, nome: nome.trim() };
-
-    db.marketplaces.push(newMkt);
-    saveDatabase(db);
-    res.status(201).json(newMkt);
-  });
-
-  app.put("/api/marketplaces/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const { nome } = req.body;
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "O nome do marketplace é obrigatório." });
-      return;
-    }
-
-    const db = getDatabase();
-    const index = db.marketplaces.findIndex(m => m.id === id);
-    if (index === -1) {
-      res.status(404).json({ message: "Marketplace não encontrado." });
-      return;
-    }
-
-    db.marketplaces[index].nome = nome.trim();
-    saveDatabase(db);
-    res.json(db.marketplaces[index]);
-  });
-
-  app.delete("/api/marketplaces/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const db = getDatabase();
-
-    const filtered = db.marketplaces.filter(m => m.id !== id);
-    if (filtered.length === db.marketplaces.length) {
-      res.status(404).json({ message: "Marketplace não encontrado." });
-      return;
-    }
-
-    db.marketplaces = filtered;
-    saveDatabase(db);
-    res.json({ message: "Marketplace excluído com sucesso." });
-  });
-
-  // Suppliers CRUD
-  app.get("/api/suppliers", (req, res) => {
-    const db = getDatabase();
-    const search = (req.query.search as string || "").toLowerCase();
-    let result = db.suppliers || [];
-
-    if (search) {
-      result = result.filter(s => 
-        s.nome.toLowerCase().includes(search) || 
-        (s.contato && s.contato.toLowerCase().includes(search))
+  // ================================================================
+  // CATEGORIES CRUD
+  // ================================================================
+  app.get("/api/categories", async (req, res) => {
+    try {
+      const search = (req.query.search as string || "").toLowerCase();
+      const { rows } = await pool.query(
+        `SELECT id, nome FROM categorias WHERE LOWER(nome) LIKE $1 ORDER BY nome`,
+        [`%${search}%`]
       );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-
-    res.json(result);
   });
 
-  app.post("/api/suppliers", authenticateToken, (req, res) => {
-    const { nome, contato, telefone, cnpj } = req.body;
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "O nome do fornecedor é obrigatório." });
-      return;
+  app.post("/api/categories", authenticateToken, async (req, res) => {
+    try {
+      const { nome } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome da categoria é obrigatório." });
+      const { rows } = await pool.query(
+        `INSERT INTO categorias (nome) VALUES ($1) RETURNING id, nome`,
+        [nome.trim()]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      if (err.code === "23505") return res.status(400).json({ message: "Já existe uma categoria com esse nome." });
+      res.status(500).json({ message: err.message });
     }
-
-    const db = getDatabase();
-    if (!db.suppliers) db.suppliers = [];
-    const newId = db.suppliers.length > 0 ? Math.max(...db.suppliers.map(s => s.id)) + 1 : 1;
-    const newSupplier: Supplier = { 
-      id: newId, 
-      nome: nome.trim(), 
-      contato: contato ? contato.trim() : undefined,
-      telefone: telefone ? telefone.trim() : undefined,
-      cnpj: cnpj ? cnpj.trim() : undefined
-    };
-
-    db.suppliers.push(newSupplier);
-    saveDatabase(db);
-    res.status(201).json(newSupplier);
   });
 
-  app.put("/api/suppliers/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const { nome, contato, telefone, cnpj } = req.body;
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "O nome do fornecedor é obrigatório." });
-      return;
+  app.put("/api/categories/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { nome } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome da categoria é obrigatório." });
+      const { rows } = await pool.query(
+        `UPDATE categorias SET nome=$1 WHERE id=$2 RETURNING id, nome`,
+        [nome.trim(), id]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: "Categoria não encontrada." });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-
-    const db = getDatabase();
-    if (!db.suppliers) db.suppliers = [];
-    const index = db.suppliers.findIndex(s => s.id === id);
-    if (index === -1) {
-      res.status(404).json({ message: "Fornecedor não encontrado." });
-      return;
-    }
-
-    db.suppliers[index] = {
-      id,
-      nome: nome.trim(),
-      contato: contato ? contato.trim() : undefined,
-      telefone: telefone ? telefone.trim() : undefined,
-      cnpj: cnpj ? cnpj.trim() : undefined
-    };
-    saveDatabase(db);
-    res.json(db.suppliers[index]);
   });
 
-  app.delete("/api/suppliers/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const db = getDatabase();
-    if (!db.suppliers) db.suppliers = [];
-
-    const filtered = db.suppliers.filter(s => s.id !== id);
-    if (filtered.length === db.suppliers.length) {
-      res.status(404).json({ message: "Fornecedor não encontrado." });
-      return;
+  app.delete("/api/categories/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { rowCount } = await pool.query(`DELETE FROM categorias WHERE id=$1`, [id]);
+      if (rowCount === 0) return res.status(404).json({ message: "Categoria não encontrada." });
+      res.json({ message: "Categoria excluída com sucesso." });
+    } catch (err: any) {
+      if (err.code === "23503") return res.status(400).json({ message: "Categoria possui produtos vinculados e não pode ser excluída." });
+      res.status(500).json({ message: err.message });
     }
-
-    db.suppliers = filtered;
-    saveDatabase(db);
-    res.json({ message: "Fornecedor excluído com sucesso." });
   });
 
-  // Products CRUD
-  app.get("/api/products", (req, res) => {
-    const db = getDatabase();
-    const search = (req.query.search as string || "").toLowerCase();
-    const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : null;
-    
-    let result = db.products.map(p => {
-      const category = db.categories.find(c => c.id === p.categoriaId);
-      return {
-        ...p,
-        categoriaNome: category ? category.nome : "Desconhecida"
-      };
-    });
-
-    if (search) {
-      result = result.filter(p => p.nome.toLowerCase().includes(search));
+  // ================================================================
+  // MARKETPLACES CRUD
+  // ================================================================
+  app.get("/api/marketplaces", async (req, res) => {
+    try {
+      const search = (req.query.search as string || "").toLowerCase();
+      const { rows } = await pool.query(
+        `SELECT id, nome FROM marketplaces WHERE LOWER(nome) LIKE $1 ORDER BY nome`,
+        [`%${search}%`]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-    if (categoryId) {
-      result = result.filter(p => p.categoriaId === categoryId);
-    }
-
-    res.json(result);
   });
 
-  app.post("/api/products", authenticateToken, (req, res) => {
-    const { nome, custo, quantidadeEstoque, categoriaId } = req.body;
-    
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "Nome do produto é obrigatório." });
-      return;
+  app.post("/api/marketplaces", authenticateToken, async (req, res) => {
+    try {
+      const { nome } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do marketplace é obrigatório." });
+      const { rows } = await pool.query(
+        `INSERT INTO marketplaces (nome) VALUES ($1) RETURNING id, nome`,
+        [nome.trim()]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      if (err.code === "23505") return res.status(400).json({ message: "Já existe um marketplace com esse nome." });
+      res.status(500).json({ message: err.message });
     }
-    if (custo === undefined || custo < 0) {
-      res.status(400).json({ message: "Custo do produto é obrigatório e não pode ser negativo." });
-      return;
-    }
-    if (quantidadeEstoque === undefined || quantidadeEstoque < 0) {
-      res.status(400).json({ message: "Quantidade em estoque é obrigatória e não pode ser negativa." });
-      return;
-    }
-    if (!categoriaId) {
-      res.status(400).json({ message: "Categoria é obrigatória." });
-      return;
-    }
-
-    const db = getDatabase();
-    const catExists = db.categories.some(c => c.id === parseInt(categoriaId));
-    if (!catExists) {
-      res.status(400).json({ message: "Categoria selecionada não é válida." });
-      return;
-    }
-
-    const newId = db.products.length > 0 ? Math.max(...db.products.map(p => p.id)) + 1 : 1;
-    const newProd: Product = {
-      id: newId,
-      nome: nome.trim(),
-      custo: Number(custo),
-      quantidadeEstoque: parseInt(quantidadeEstoque),
-      categoriaId: parseInt(categoriaId)
-    };
-
-    db.products.push(newProd);
-    saveDatabase(db);
-    res.status(201).json(newProd);
   });
 
-  app.put("/api/products/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const { nome, custo, quantidadeEstoque, categoriaId } = req.body;
-
-    if (!nome || nome.trim() === "") {
-      res.status(400).json({ message: "Nome do produto é obrigatório." });
-      return;
+  app.put("/api/marketplaces/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { nome } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do marketplace é obrigatório." });
+      const { rows } = await pool.query(
+        `UPDATE marketplaces SET nome=$1 WHERE id=$2 RETURNING id, nome`,
+        [nome.trim(), id]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: "Marketplace não encontrado." });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-    if (custo === undefined || custo < 0) {
-      res.status(400).json({ message: "Custo do produto é obrigatório e não pode ser negativo." });
-      return;
-    }
-    if (quantidadeEstoque === undefined || quantidadeEstoque < 0) {
-      res.status(400).json({ message: "Quantidade em estoque é obrigatória e não pode ser negativa." });
-      return;
-    }
-    if (!categoriaId) {
-      res.status(400).json({ message: "Categoria é obrigatória." });
-      return;
-    }
-
-    const db = getDatabase();
-    const index = db.products.findIndex(p => p.id === id);
-    if (index === -1) {
-      res.status(404).json({ message: "Produto não encontrado." });
-      return;
-    }
-
-    const catExists = db.categories.some(c => c.id === parseInt(categoriaId));
-    if (!catExists) {
-      res.status(400).json({ message: "Categoria selecionada não é válida." });
-      return;
-    }
-
-    db.products[index] = {
-      id,
-      nome: nome.trim(),
-      custo: Number(custo),
-      quantidadeEstoque: parseInt(quantidadeEstoque),
-      categoriaId: parseInt(categoriaId)
-    };
-
-    saveDatabase(db);
-    res.json(db.products[index]);
   });
 
-  app.delete("/api/products/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const db = getDatabase();
-
-    const filtered = db.products.filter(p => p.id !== id);
-    if (filtered.length === db.products.length) {
-      res.status(404).json({ message: "Produto não encontrado." });
-      return;
+  app.delete("/api/marketplaces/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { rowCount } = await pool.query(`DELETE FROM marketplaces WHERE id=$1`, [id]);
+      if (rowCount === 0) return res.status(404).json({ message: "Marketplace não encontrado." });
+      res.json({ message: "Marketplace excluído com sucesso." });
+    } catch (err: any) {
+      if (err.code === "23503") return res.status(400).json({ message: "Marketplace possui pedidos vinculados e não pode ser excluído." });
+      res.status(500).json({ message: err.message });
     }
-
-    db.products = filtered;
-    saveDatabase(db);
-    res.json({ message: "Produto excluído com sucesso." });
   });
 
-  // Expenses / Inflows CRUD
-  app.get("/api/expenses", (req, res) => {
-    const db = getDatabase();
-    // Sort expenses by date descending
-    const sortedExpenses = [...(db.expenses || [])].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-    
-    // Populate product name and supplier name if relevant
-    const populated = sortedExpenses.map(exp => {
-      const result: any = { ...exp };
-      if (exp.produtoId) {
-        const prod = db.products.find(p => p.id === exp.produtoId);
-        result.produtoNome = prod ? prod.nome : "Produto Removido";
-      }
-      if (exp.fornecedorId) {
-        const supp = (db.suppliers || []).find(s => s.id === exp.fornecedorId);
-        result.fornecedorNome = supp ? supp.nome : "Fornecedor Removido";
-      }
-      return result;
-    });
-
-    res.json(populated);
+  // ================================================================
+  // SUPPLIERS CRUD
+  // ================================================================
+  app.get("/api/suppliers", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`SELECT id, nome, contato, telefone, cnpj FROM fornecedores ORDER BY nome`);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
-  app.post("/api/expenses", authenticateToken, (req, res) => {
-    const { tipo, descricao, produtoId, fornecedorId, quantidade, custoUnitario, valor, data, newProduct } = req.body;
-
-    if (!tipo || (tipo !== "PRODUTO" && tipo !== "GERAL")) {
-      res.status(400).json({ message: "Tipo de lançamento inválido." });
-      return;
+  app.post("/api/suppliers", authenticateToken, async (req, res) => {
+    try {
+      const { nome, contato, telefone, cnpj } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do fornecedor é obrigatório." });
+      const { rows } = await pool.query(
+        `INSERT INTO fornecedores (nome, contato, telefone, cnpj) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [nome.trim(), contato || null, telefone || null, cnpj || null]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-
-    if (tipo === "GERAL" && (!descricao || descricao.trim() === "")) {
-      res.status(400).json({ message: "Descrição é obrigatória para despesas gerais." });
-      return;
-    }
-
-    const db = getDatabase();
-    let updatedDescricao = descricao ? descricao.trim() : "";
-    let resolvedProdutoId: number | undefined;
-    let resolvedQuantidade: number | undefined;
-    let resolvedCustoUnitario: number | undefined;
-    let resolvedFornecedorId: number | undefined = fornecedorId ? parseInt(fornecedorId) : undefined;
-
-    if (tipo === "PRODUTO") {
-      const qty = parseInt(quantidade);
-      const unitCost = parseFloat(custoUnitario);
-
-      if (isNaN(qty) || qty <= 0) {
-        res.status(400).json({ message: "Quantidade deve ser maior que zero." });
-        return;
-      }
-      if (isNaN(unitCost) || unitCost < 0) {
-        res.status(400).json({ message: "Custo unitário deve ser maior ou igual a zero." });
-        return;
-      }
-
-      let pId = parseInt(produtoId);
-
-      // Dynamic new product creation on-the-fly
-      if (produtoId === "new" || (newProduct && newProduct.nome)) {
-        if (!newProduct || !newProduct.nome || newProduct.nome.trim() === "") {
-          res.status(400).json({ message: "O nome do novo produto é obrigatório." });
-          return;
-        }
-        const newId = db.products.length > 0 ? Math.max(...db.products.map(p => p.id)) + 1 : 1;
-        const createdProduct = {
-          id: newId,
-          nome: newProduct.nome.trim(),
-          custo: unitCost,
-          quantidadeEstoque: 0, // Will be incremented below
-          categoriaId: parseInt(newProduct.categoriaId) || 0
-        };
-        db.products.push(createdProduct);
-        pId = newId;
-      }
-
-      if (isNaN(pId)) {
-        res.status(400).json({ message: "Selecione um produto válido ou cadastre um novo." });
-        return;
-      }
-
-      const prodIndex = db.products.findIndex(p => p.id === pId);
-      if (prodIndex === -1) {
-        res.status(404).json({ message: "Produto selecionado não existe." });
-        return;
-      }
-
-      // Update product stock and cost
-      db.products[prodIndex].quantidadeEstoque += qty;
-      db.products[prodIndex].custo = unitCost;
-
-      resolvedProdutoId = pId;
-      resolvedQuantidade = qty;
-      resolvedCustoUnitario = unitCost;
-      updatedDescricao = `Entrada de Estoque: ${db.products[prodIndex].nome}`;
-    } else {
-      const numericValor = parseFloat(valor);
-      if (isNaN(numericValor) || numericValor < 0) {
-        res.status(400).json({ message: "Valor deve ser maior ou igual a zero." });
-        return;
-      }
-    }
-
-    const newId = (db.expenses && db.expenses.length > 0) ? Math.max(...db.expenses.map(e => e.id)) + 1 : 1;
-    const newExpense: Expense = {
-      id: newId,
-      tipo,
-      descricao: updatedDescricao,
-      produtoId: resolvedProdutoId,
-      fornecedorId: resolvedFornecedorId,
-      quantidade: resolvedQuantidade,
-      custoUnitario: resolvedCustoUnitario,
-      valor: tipo === "PRODUTO" ? Number((resolvedQuantidade! * resolvedCustoUnitario!).toFixed(2)) : Number(parseFloat(valor).toFixed(2)),
-      data: data ? new Date(data).toISOString() : new Date().toISOString()
-    };
-
-    if (!db.expenses) db.expenses = [];
-    db.expenses.push(newExpense);
-    saveDatabase(db);
-
-    res.status(201).json(newExpense);
   });
 
-  app.delete("/api/expenses/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const db = getDatabase();
-
-    if (!db.expenses) {
-      res.status(404).json({ message: "Lançamento não encontrado." });
-      return;
+  app.put("/api/suppliers/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { nome, contato, telefone, cnpj } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do fornecedor é obrigatório." });
+      const { rows } = await pool.query(
+        `UPDATE fornecedores SET nome=$1, contato=$2, telefone=$3, cnpj=$4 WHERE id=$5 RETURNING *`,
+        [nome.trim(), contato || null, telefone || null, cnpj || null, id]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: "Fornecedor não encontrado." });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-
-    const expIndex = db.expenses.findIndex(e => e.id === id);
-    if (expIndex === -1) {
-      res.status(404).json({ message: "Lançamento não encontrado." });
-      return;
-    }
-
-    const expense = db.expenses[expIndex];
-
-    // If it was a product inflow, reverse the stock update
-    if (expense.tipo === "PRODUTO" && expense.produtoId && expense.quantidade) {
-      const prodIndex = db.products.findIndex(p => p.id === expense.produtoId);
-      if (prodIndex !== -1) {
-        db.products[prodIndex].quantidadeEstoque = Math.max(0, db.products[prodIndex].quantidadeEstoque - expense.quantidade);
-      }
-    }
-
-    db.expenses.splice(expIndex, 1);
-    saveDatabase(db);
-    res.json({ message: "Lançamento excluído com sucesso." });
   });
 
-  // Orders CRUD
-  app.get("/api/orders", (req, res) => {
-    const db = getDatabase();
-    const marketplaceId = req.query.marketplaceId ? parseInt(req.query.marketplaceId as string) : null;
-    const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : null;
-    const produtoId = req.query.produtoId ? parseInt(req.query.produtoId as string) : null;
-    const startDate = req.query.startDate as string || null;
-    const endDate = req.query.endDate as string || null;
-
-    let result = db.orders.map(o => {
-      const order = ensureOrderItems(o, db);
-      
-      const populatedItems = order.items.map((item: any) => {
-        const prod = db.products.find(p => p.id === item.produtoId);
-        const cat = db.categories.find(c => c.id === item.categoriaId);
-        return {
-          ...item,
-          produtoNome: prod ? prod.nome : (item.produtoNome || "Produto Removido"),
-          produtoCusto: prod ? prod.custo : (item.produtoCusto || 0),
-          categoriaNome: cat ? cat.nome : "Desconhecida"
-        };
-      });
-
-      const mkt = db.marketplaces.find(m => m.id === order.marketplaceId);
-
-      let topProdutoNome = "";
-      if (populatedItems.length === 1) {
-        topProdutoNome = populatedItems[0].produtoNome;
-      } else if (populatedItems.length > 1) {
-        topProdutoNome = `${populatedItems[0].produtoNome} (+ ${populatedItems.length - 1} item(ns))`;
-      } else {
-        topProdutoNome = "Sem Itens";
-      }
-
-      return {
-        ...order,
-        items: populatedItems,
-        produtoId: populatedItems[0]?.produtoId || order.produtoId,
-        produtoNome: topProdutoNome,
-        produtoCusto: populatedItems[0]?.produtoCusto || 0,
-        categoriaId: populatedItems[0]?.categoriaId || order.categoriaId,
-        categoriaNome: populatedItems[0]?.categoriaNome || "Desconhecida",
-        marketplaceNome: mkt ? mkt.nome : "Desconhecido"
-      };
-    });
-
-    // Filters
-    if (marketplaceId) {
-      result = result.filter(o => o.marketplaceId === marketplaceId);
+  app.delete("/api/suppliers/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { rowCount } = await pool.query(`DELETE FROM fornecedores WHERE id=$1`, [id]);
+      if (rowCount === 0) return res.status(404).json({ message: "Fornecedor não encontrado." });
+      res.json({ message: "Fornecedor excluído com sucesso." });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-    if (categoryId) {
-      result = result.filter(o => o.categoriaId === categoryId || o.items?.some((item: any) => item.categoriaId === categoryId));
-    }
-    if (produtoId) {
-      result = result.filter(o => o.produtoId === produtoId || o.items?.some((item: any) => item.produtoId === produtoId));
-    }
-    if (startDate) {
-      result = result.filter(o => new Date(o.dataPedido) >= new Date(startDate));
-    }
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      result = result.filter(o => new Date(o.dataPedido) <= end);
-    }
-
-    // Sort descending by default
-    result.sort((a, b) => new Date(b.dataPedido).getTime() - new Date(a.dataPedido).getTime());
-
-    res.json(result);
   });
 
-  app.post("/api/orders", authenticateToken, (req, res) => {
-    const {
-      items, // array of { produtoId, quantidade, valorVenda }
-      produtoId, // fallback
-      marketplaceId,
-      quantidade, // fallback
-      valorVenda, // fallback
-      comissaoTipo,
-      comissaoInformada,
-      frete,
-      taxaFixa
-    } = req.body;
+  // ================================================================
+  // PRODUCTS CRUD
+  // ================================================================
+  app.get("/api/products", async (req, res) => {
+    try {
+      const search = (req.query.search as string || "").toLowerCase();
+      const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : null;
 
-    const db = getDatabase();
+      let query = `
+        SELECT p.id, p.nome, p.custo, p.quantidade_estoque AS "quantidadeEstoque",
+               p.categoria_id AS "categoriaId", c.nome AS "categoriaNome"
+        FROM produtos p
+        LEFT JOIN categorias c ON c.id = p.categoria_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
 
-    // Check if marketplace exists
-    const mktExists = db.marketplaces.some(m => m.id === parseInt(marketplaceId));
-    if (!mktExists) {
-      return res.status(404).json({ message: "Marketplace não encontrado." });
-    }
-
-    if (frete === undefined || frete < 0) return res.status(400).json({ message: "O frete não pode ser negativo." });
-    if (taxaFixa === undefined || taxaFixa < 0) return res.status(400).json({ message: "A taxa fixa não pode ser negativa." });
-    if (comissaoInformada === undefined || comissaoInformada < 0) return res.status(400).json({ message: "A comissão não pode ser negativa." });
-
-    let orderItems: any[] = [];
-    if (items && Array.isArray(items) && items.length > 0) {
-      orderItems = items;
-    } else {
-      // Fallback for single item format
-      if (!produtoId) return res.status(400).json({ message: "O produto é obrigatório." });
-      if (!quantidade || quantidade <= 0) return res.status(400).json({ message: "A quantidade deve ser maior que zero." });
-      if (valorVenda === undefined || valorVenda < 0) return res.status(400).json({ message: "O valor da venda não pode ser negativo." });
-      orderItems = [{ produtoId, quantidade, valorVenda }];
-    }
-
-    // Temp save products state in case we need to rollback stock changes on failure
-    const originalProducts = JSON.parse(JSON.stringify(db.products));
-    
-    let totalCustoSKU = 0;
-    let totalValorVenda = 0;
-    const validatedItems: any[] = [];
-
-    for (const item of orderItems) {
-      const pId = parseInt(item.produtoId);
-      const qty = parseInt(item.quantidade);
-      const sVal = parseFloat(item.valorVenda);
-
-      if (isNaN(pId)) return res.status(400).json({ message: "ID de produto inválido." });
-      if (isNaN(qty) || qty <= 0) return res.status(400).json({ message: "A quantidade de cada item deve ser maior que zero." });
-      if (isNaN(sVal) || sVal < 0) return res.status(400).json({ message: "O valor de venda não pode ser negativo." });
-
-      const productIndex = db.products.findIndex(p => p.id === pId);
-      if (productIndex === -1) {
-        db.products = originalProducts;
-        return res.status(404).json({ message: `Produto com ID ${pId} não encontrado.` });
+      if (search) {
+        params.push(`%${search}%`);
+        query += ` AND LOWER(p.nome) LIKE $${params.length}`;
       }
-
-      const product = db.products[productIndex];
-      if (product.quantidadeEstoque < qty) {
-        db.products = originalProducts;
-        return res.status(400).json({
-          message: `Estoque insuficiente para o produto "${product.nome}". Estoque atual: ${product.quantidadeEstoque}. Solicitado: ${qty}.`
-        });
+      if (categoryId) {
+        params.push(categoryId);
+        query += ` AND p.categoria_id = $${params.length}`;
       }
+      query += ` ORDER BY p.nome`;
 
-      // Deduct Stock
-      product.quantidadeEstoque -= qty;
-
-      totalCustoSKU += product.custo * qty;
-      totalValorVenda += sVal;
-
-      validatedItems.push({
-        produtoId: pId,
-        quantidade: qty,
-        valorVenda: sVal,
-        categoriaId: product.categoriaId
-      });
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-
-    // Calculations
-    let comissaoValor = 0;
-    if (comissaoTipo === "PERCENTUAL") {
-      comissaoValor = Number(((comissaoInformada / 100) * totalValorVenda).toFixed(2));
-    } else {
-      comissaoValor = Number(comissaoInformada);
-    }
-
-    const lucroBruto = Number((totalValorVenda - frete - taxaFixa - comissaoValor).toFixed(2));
-    const lucroLiquido = Number((lucroBruto - totalCustoSKU).toFixed(2));
-    const margemBruta = totalValorVenda > 0 ? Number(((lucroBruto / totalValorVenda) * 100).toFixed(2)) : 0;
-    const margemLiquida = totalValorVenda > 0 ? Number(((lucroLiquido / totalValorVenda) * 100).toFixed(2)) : 0;
-
-    // Save Order
-    const newId = db.orders.length > 0 ? Math.max(...db.orders.map(o => o.id)) + 1 : 1;
-    const newOrder: any = {
-      id: newId,
-      items: validatedItems,
-      marketplaceId: parseInt(marketplaceId),
-      comissaoTipo,
-      comissaoValor,
-      comissaoInformada: Number(comissaoInformada),
-      frete: Number(frete),
-      taxaFixa: Number(taxaFixa),
-      valorVenda: totalValorVenda,
-      lucroBruto,
-      lucroLiquido,
-      margemBruta,
-      margemLiquida,
-      dataPedido: new Date().toISOString()
-    };
-
-    db.orders.push(newOrder);
-    saveDatabase(db);
-
-    return res.status(201).json(newOrder);
   });
 
-  app.put("/api/orders/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const {
-      items, // array of { produtoId, quantidade, valorVenda }
-      marketplaceId,
-      comissaoTipo,
-      comissaoInformada,
-      frete,
-      taxaFixa
-    } = req.body;
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: "O pedido deve conter pelo menos um item." });
+  app.post("/api/products", authenticateToken, async (req, res) => {
+    try {
+      const { nome, custo, quantidadeEstoque, categoriaId } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do produto é obrigatório." });
+      if (custo === undefined || custo < 0) return res.status(400).json({ message: "O custo não pode ser negativo." });
+      if (!categoriaId) return res.status(400).json({ message: "A categoria é obrigatória." });
+      const { rows } = await pool.query(
+        `INSERT INTO produtos (nome, custo, quantidade_estoque, categoria_id) VALUES ($1,$2,$3,$4)
+         RETURNING id, nome, custo, quantidade_estoque AS "quantidadeEstoque", categoria_id AS "categoriaId"`,
+        [nome.trim(), Number(custo), Number(quantidadeEstoque || 0), Number(categoriaId)]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-    if (!marketplaceId) return res.status(400).json({ message: "O marketplace é obrigatório." });
-    if (frete === undefined || frete < 0) return res.status(400).json({ message: "O frete não pode ser negativo." });
-    if (taxaFixa === undefined || taxaFixa < 0) return res.status(400).json({ message: "A taxa fixa não pode ser negativa." });
-    if (comissaoInformada === undefined || comissaoInformada < 0) return res.status(400).json({ message: "A comissão não pode ser negativa." });
-
-    const db = getDatabase();
-    
-    // Find existing order
-    const orderIndex = db.orders.findIndex(o => o.id === id);
-    if (orderIndex === -1) {
-      return res.status(404).json({ message: "Pedido não encontrado." });
-    }
-    const oldOrder = ensureOrderItems(db.orders[orderIndex], db);
-
-    // Temp restore stock for check
-    const originalProducts = JSON.parse(JSON.stringify(db.products));
-    
-    // Return old stock
-    oldOrder.items.forEach((item: any) => {
-      const pIdx = db.products.findIndex(p => p.id === item.produtoId);
-      if (pIdx !== -1) {
-        db.products[pIdx].quantidadeEstoque += item.quantidade;
-      }
-    });
-
-    // Check new items stock & validity
-    let totalCustoSKU = 0;
-    let totalValorVenda = 0;
-    const validatedItems: any[] = [];
-
-    for (const item of items) {
-      const prodId = parseInt(item.produtoId);
-      const qty = parseInt(item.quantidade);
-      const saleVal = parseFloat(item.valorVenda);
-
-      if (isNaN(prodId)) return res.status(400).json({ message: "ID do produto inválido." });
-      if (isNaN(qty) || qty <= 0) return res.status(400).json({ message: "A quantidade de cada item deve ser maior que zero." });
-      if (isNaN(saleVal) || saleVal < 0) return res.status(400).json({ message: "O valor de venda não pode ser negativo." });
-
-      const pIdx = db.products.findIndex(p => p.id === prodId);
-      if (pIdx === -1) {
-        // Rollback and fail
-        db.products = originalProducts;
-        return res.status(404).json({ message: `Produto com ID ${prodId} não encontrado.` });
-      }
-
-      const product = db.products[pIdx];
-      if (product.quantidadeEstoque < qty) {
-        // Rollback and fail
-        db.products = originalProducts;
-        return res.status(400).json({
-          message: `Estoque insuficiente para o produto "${product.nome}". Estoque disponível (com estorno): ${product.quantidadeEstoque}. Solicitado: ${qty}.`
-        });
-      }
-
-      // Deduct stock
-      product.quantidadeEstoque -= qty;
-
-      totalCustoSKU += product.custo * qty;
-      totalValorVenda += saleVal;
-
-      validatedItems.push({
-        produtoId: prodId,
-        quantidade: qty,
-        valorVenda: saleVal,
-        categoriaId: product.categoriaId
-      });
-    }
-
-    // Calculations
-    let comissaoValor = 0;
-    if (comissaoTipo === "PERCENTUAL") {
-      comissaoValor = Number(((comissaoInformada / 100) * totalValorVenda).toFixed(2));
-    } else {
-      comissaoValor = Number(comissaoInformada);
-    }
-
-    const lucroBruto = Number((totalValorVenda - frete - taxaFixa - comissaoValor).toFixed(2));
-    const lucroLiquido = Number((lucroBruto - totalCustoSKU).toFixed(2));
-    const margemBruta = totalValorVenda > 0 ? Number(((lucroBruto / totalValorVenda) * 100).toFixed(2)) : 0;
-    const margemLiquida = totalValorVenda > 0 ? Number(((lucroLiquido / totalValorVenda) * 100).toFixed(2)) : 0;
-
-    // Update order
-    db.orders[orderIndex] = {
-      ...oldOrder,
-      items: validatedItems,
-      marketplaceId: parseInt(marketplaceId),
-      comissaoTipo,
-      comissaoValor,
-      comissaoInformada: Number(comissaoInformada),
-      frete: Number(frete),
-      taxaFixa: Number(taxaFixa),
-      valorVenda: totalValorVenda,
-      lucroBruto,
-      lucroLiquido,
-      margemBruta,
-      margemLiquida,
-      dataPedido: oldOrder.dataPedido
-    };
-
-    saveDatabase(db);
-    res.json(db.orders[orderIndex]);
   });
 
-  app.delete("/api/orders/:id", authenticateToken, (req, res) => {
-    const id = parseInt(req.params.id);
-    const db = getDatabase();
-
-    const orderIndex = db.orders.findIndex(o => o.id === id);
-    if (orderIndex === -1) {
-      res.status(404).json({ message: "Pedido não encontrado." });
-      return;
+  app.put("/api/products/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { nome, custo, quantidadeEstoque, categoriaId } = req.body;
+      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do produto é obrigatório." });
+      if (custo === undefined || custo < 0) return res.status(400).json({ message: "O custo não pode ser negativo." });
+      if (!categoriaId) return res.status(400).json({ message: "A categoria é obrigatória." });
+      const { rows } = await pool.query(
+        `UPDATE produtos SET nome=$1, custo=$2, quantidade_estoque=$3, categoria_id=$4
+         WHERE id=$5
+         RETURNING id, nome, custo, quantidade_estoque AS "quantidadeEstoque", categoria_id AS "categoriaId"`,
+        [nome.trim(), Number(custo), Number(quantidadeEstoque || 0), Number(categoriaId), id]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: "Produto não encontrado." });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
-
-    const order = ensureOrderItems(db.orders[orderIndex], db);
-
-    // Give back stock for all items
-    order.items.forEach((item: any) => {
-      const productIndex = db.products.findIndex(p => p.id === item.produtoId);
-      if (productIndex !== -1) {
-        db.products[productIndex].quantidadeEstoque += item.quantidade;
-      }
-    });
-
-    db.orders.splice(orderIndex, 1);
-    saveDatabase(db);
-    res.json({ message: "Pedido estornado e excluído com sucesso. Estoque devolvido." });
   });
 
-  // Dashboard Aggregates
-  app.get("/api/dashboard", (req, res) => {
-    const db = getDatabase();
-
-    // Key indicators
-    const totalPedidos = db.orders.length;
-    const totalVendido = Number(db.orders.reduce((sum, o) => sum + o.valorVenda, 0).toFixed(2));
-    const lucroBrutoTotal = Number(db.orders.reduce((sum, o) => sum + o.lucroBruto, 0).toFixed(2));
-    const lucroLiquidoTotal = Number(db.orders.reduce((sum, o) => sum + o.lucroLiquido, 0).toFixed(2));
-    const totalQtdVendida = db.orders.reduce((sum, o) => {
-      const order = ensureOrderItems(o, db);
-      return sum + order.items.reduce((itemSum: number, item: any) => itemSum + item.quantidade, 0);
-    }, 0);
-
-    const ticketMedio = totalPedidos > 0 ? Number((totalVendido / totalPedidos).toFixed(2)) : 0;
-    const margemBrutaMedia = totalVendido > 0 ? Number(((lucroBrutoTotal / totalVendido) * 100).toFixed(2)) : 0;
-    const margemLiquidaMedia = totalVendido > 0 ? Number(((lucroLiquidoTotal / totalVendido) * 100).toFixed(2)) : 0;
-
-    const produtosCadastrados = db.products.length;
-    const totalEstoque = db.products.reduce((sum, p) => sum + p.quantidadeEstoque, 0);
-    const categoriasCount = db.categories.length;
-    const marketplacesCount = db.marketplaces.length;
-
-    // Stock indicators
-    const semEstoque = db.products.filter(p => p.quantidadeEstoque === 0).length;
-    const estoqueBaixo = db.products.filter(p => p.quantidadeEstoque > 0 && p.quantidadeEstoque <= 5).length;
-
-    // Top 10 products sold (by qty)
-    const productSalesMap: Record<number, { nome: string; qty: number; totalValue: number }> = {};
-    db.orders.forEach(o => {
-      const order = ensureOrderItems(o, db);
-      order.items.forEach((item: any) => {
-        const prod = db.products.find(p => p.id === item.produtoId);
-        const name = prod ? prod.nome : (item.produtoNome || "Removido");
-        if (!productSalesMap[item.produtoId]) {
-          productSalesMap[item.produtoId] = { nome: name, qty: 0, totalValue: 0 };
-        }
-        productSalesMap[item.produtoId].qty += item.quantidade;
-        productSalesMap[item.produtoId].totalValue += item.valorVenda;
-      });
-    });
-
-    const topProducts = Object.values(productSalesMap)
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 10);
-
-    // Margins by category (proportional metric attribution)
-    const catMarginsMap: Record<number, { nome: string; venda: number; bruto: number; liquido: number }> = {};
-    db.orders.forEach(o => {
-      const order = ensureOrderItems(o, db);
-      const totalOrderVenda = order.valorVenda;
-      
-      order.items.forEach((item: any) => {
-        const cat = db.categories.find(c => c.id === item.categoriaId);
-        const name = cat ? cat.nome : "Outros";
-        if (!catMarginsMap[item.categoriaId]) {
-          catMarginsMap[item.categoriaId] = { nome: name, venda: 0, bruto: 0, liquido: 0 };
-        }
-        
-        const factor = totalOrderVenda > 0 ? (item.valorVenda / totalOrderVenda) : (1 / order.items.length);
-        
-        catMarginsMap[item.categoriaId].venda += item.valorVenda;
-        catMarginsMap[item.categoriaId].bruto += order.lucroBruto * factor;
-        catMarginsMap[item.categoriaId].liquido += order.lucroLiquido * factor;
-      });
-    });
-
-    const marginsByCategory = Object.values(catMarginsMap).map(item => {
-      const margemBruta = item.venda > 0 ? Number(((item.bruto / item.venda) * 100).toFixed(2)) : 0;
-      const margemLiquida = item.venda > 0 ? Number(((item.liquido / item.venda) * 100).toFixed(2)) : 0;
-      return {
-        categoria: item.nome,
-        margemBruta,
-        margemLiquida,
-        venda: Number(item.venda.toFixed(2))
-      };
-    });
-
-    // Marketplace stats
-    const mktStatsMap: Record<number, { nome: string; venda: number; bruto: number; liquido: number; pedidos: number }> = {};
-    db.orders.forEach(o => {
-      const mkt = db.marketplaces.find(m => m.id === o.marketplaceId);
-      const name = mkt ? mkt.nome : "Outros";
-      if (!mktStatsMap[o.marketplaceId]) {
-        mktStatsMap[o.marketplaceId] = { nome: name, venda: 0, bruto: 0, liquido: 0, pedidos: 0 };
-      }
-      mktStatsMap[o.marketplaceId].venda += o.valorVenda;
-      mktStatsMap[o.marketplaceId].bruto += o.lucroBruto;
-      mktStatsMap[o.marketplaceId].liquido += o.lucroLiquido;
-      mktStatsMap[o.marketplaceId].pedidos += 1;
-    });
-
-    const mktStats = Object.values(mktStatsMap).map(item => {
-      const margemBruta = item.venda > 0 ? Number(((item.bruto / item.venda) * 100).toFixed(2)) : 0;
-      const margemLiquida = item.venda > 0 ? Number(((item.liquido / item.venda) * 100).toFixed(2)) : 0;
-      return {
-        marketplace: item.nome,
-        valorVendido: Number(item.venda.toFixed(2)),
-        lucroBruto: Number(item.bruto.toFixed(2)),
-        lucroLiquido: Number(item.liquido.toFixed(2)),
-        pedidos: item.pedidos,
-        margemBruta,
-        margemLiquida
-      };
-    });
-
-    // Time series (Sales, Profit & Costs by Month)
-    const monthlyDataMap: Record<string, { 
-      monthName: string; 
-      totalVendido: number; 
-      lucroBruto: number; 
-      lucroLiquido: number; 
-      pedidos: number;
-      custosEntrada: number;
-      custosGerais: number;
-      totalCustos: number;
-    }> = {};
-    const monthsLocale = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    
-    const current = new Date();
-    for (let i = 2; i >= 0; i--) {
-      const d = new Date(current.getFullYear(), current.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      monthlyDataMap[key] = {
-        monthName: `${monthsLocale[d.getMonth()]} ${d.getFullYear()}`,
-        totalVendido: 0,
-        lucroBruto: 0,
-        lucroLiquido: 0,
-        pedidos: 0,
-        custosEntrada: 0,
-        custosGerais: 0,
-        totalCustos: 0
-      };
+  app.delete("/api/products/:id", authenticateToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { rowCount } = await pool.query(`DELETE FROM produtos WHERE id=$1`, [id]);
+      if (rowCount === 0) return res.status(404).json({ message: "Produto não encontrado." });
+      res.json({ message: "Produto excluído com sucesso." });
+    } catch (err: any) {
+      if (err.code === "23503") return res.status(400).json({ message: "Produto possui pedidos ou despesas vinculados e não pode ser excluído." });
+      res.status(500).json({ message: err.message });
     }
+  });
 
-    db.orders.forEach(o => {
-      const d = new Date(o.dataPedido);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      
-      if (!monthlyDataMap[key]) {
-        monthlyDataMap[key] = {
-          monthName: `${monthsLocale[d.getMonth()]} ${d.getFullYear()}`,
-          totalVendido: 0,
-          lucroBruto: 0,
-          lucroLiquido: 0,
-          pedidos: 0,
-          custosEntrada: 0,
-          custosGerais: 0,
-          totalCustos: 0
-        };
+  // ================================================================
+  // EXPENSES CRUD
+  // ================================================================
+  app.get("/api/expenses", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT d.id, d.tipo, d.descricao, d.produto_id AS "produtoId",
+               p.nome AS "produtoNome", d.fornecedor_id AS "fornecedorId",
+               f.nome AS "fornecedorNome", d.quantidade, d.custo_unitario AS "custoUnitario",
+               d.valor, d.data
+        FROM despesas d
+        LEFT JOIN produtos p ON p.id = d.produto_id
+        LEFT JOIN fornecedores f ON f.id = d.fornecedor_id
+        ORDER BY d.data DESC
+      `);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/expenses", authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { tipo, descricao, produtoId, fornecedorId, quantidade, custoUnitario, valor, data, newProduct } = req.body;
+
+      if (!tipo || (tipo !== "PRODUTO" && tipo !== "GERAL")) {
+        return res.status(400).json({ message: "Tipo de lançamento inválido." });
       }
-      
-      monthlyDataMap[key].totalVendido += o.valorVenda;
-      monthlyDataMap[key].lucroBruto += o.lucroBruto;
-      monthlyDataMap[key].lucroLiquido += o.lucroLiquido;
-      monthlyDataMap[key].pedidos += 1;
-    });
 
-    if (db.expenses) {
-      db.expenses.forEach(e => {
-        const d = new Date(e.data);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        
-        if (!monthlyDataMap[key]) {
-          monthlyDataMap[key] = {
-            monthName: `${monthsLocale[d.getMonth()]} ${d.getFullYear()}`,
-            totalVendido: 0,
-            lucroBruto: 0,
-            lucroLiquido: 0,
-            pedidos: 0,
-            custosEntrada: 0,
-            custosGerais: 0,
-            totalCustos: 0
-          };
-        }
-        
-        if (e.tipo === "PRODUTO") {
-          monthlyDataMap[key].custosEntrada += e.valor;
+      let resolvedProdutoId: number | null = null;
+      let resolvedDescricao = descricao ? descricao.trim() : "";
+      let resolvedValor: number = 0;
+      let resolvedQuantidade: number | null = null;
+      let resolvedCustoUnitario: number | null = null;
+      const resolvedFornecedorId: number | null = fornecedorId ? parseInt(fornecedorId) : null;
+
+      if (tipo === "PRODUTO") {
+        const qty = parseInt(quantidade);
+        const unitCost = parseFloat(custoUnitario);
+        if (isNaN(qty) || qty <= 0) return res.status(400).json({ message: "Quantidade deve ser maior que zero." });
+        if (isNaN(unitCost) || unitCost < 0) return res.status(400).json({ message: "Custo unitário inválido." });
+
+        let pId: number;
+
+        // Criar novo produto on-the-fly
+        if (produtoId === "new" && newProduct && newProduct.nome) {
+          const catId = parseInt(newProduct.categoriaId);
+          if (!newProduct.nome.trim() || isNaN(catId)) {
+            return res.status(400).json({ message: "Nome e categoria do novo produto são obrigatórios." });
+          }
+          const { rows: newProdRows } = await client.query(
+            `INSERT INTO produtos (nome, custo, quantidade_estoque, categoria_id) VALUES ($1,$2,0,$3) RETURNING id, nome`,
+            [newProduct.nome.trim(), unitCost, catId]
+          );
+          pId = newProdRows[0].id;
         } else {
-          monthlyDataMap[key].custosGerais += e.valor;
+          pId = parseInt(produtoId);
+          if (isNaN(pId)) return res.status(400).json({ message: "Produto inválido." });
         }
-        monthlyDataMap[key].totalCustos += e.valor;
-      });
+
+        // Atualiza estoque e custo do produto
+        const { rows: prodRows } = await client.query(
+          `UPDATE produtos SET quantidade_estoque = quantidade_estoque + $1, custo = $2 WHERE id = $3 RETURNING nome`,
+          [qty, unitCost, pId]
+        );
+        if (prodRows.length === 0) return res.status(404).json({ message: "Produto não encontrado." });
+
+        resolvedProdutoId = pId;
+        resolvedDescricao = `Entrada de Estoque: ${prodRows[0].nome}`;
+        resolvedQuantidade = qty;
+        resolvedCustoUnitario = unitCost;
+        resolvedValor = Number((qty * unitCost).toFixed(2));
+      } else {
+        const numValor = parseFloat(valor);
+        if (isNaN(numValor) || numValor < 0) return res.status(400).json({ message: "Valor inválido." });
+        if (!resolvedDescricao) return res.status(400).json({ message: "Descrição é obrigatória." });
+        resolvedValor = numValor;
+      }
+
+      const resolvedData = data ? new Date(data).toISOString() : new Date().toISOString();
+
+      const { rows } = await client.query(
+        `INSERT INTO despesas (tipo, descricao, produto_id, fornecedor_id, quantidade, custo_unitario, valor, data)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [tipo, resolvedDescricao, resolvedProdutoId, resolvedFornecedorId, resolvedQuantidade, resolvedCustoUnitario, resolvedValor, resolvedData]
+      );
+
+      await client.query("COMMIT");
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
     }
-
-    const monthlyEvolution = Object.keys(monthlyDataMap)
-      .sort()
-      .map(key => ({
-        mes: monthlyDataMap[key].monthName,
-        vendas: Number(monthlyDataMap[key].totalVendido.toFixed(2)),
-        lucroBruto: Number(monthlyDataMap[key].lucroBruto.toFixed(2)),
-        lucroLiquido: Number(monthlyDataMap[key].lucroLiquido.toFixed(2)),
-        pedidos: monthlyDataMap[key].pedidos,
-        custosEntrada: Number(monthlyDataMap[key].custosEntrada.toFixed(2)),
-        custosGerais: Number(monthlyDataMap[key].custosGerais.toFixed(2)),
-        totalCustos: Number(monthlyDataMap[key].totalCustos.toFixed(2))
-      }));
-
-    res.json({
-      indicators: {
-        totalVendido,
-        totalPedidos,
-        lucroBrutoTotal,
-        lucroLiquidoTotal,
-        margemBrutaMedia,
-        margemLiquidaMedia,
-        ticketMedio,
-        totalQtdVendida,
-        produtosCadastrados,
-        totalEstoque,
-        categoriasCount,
-        marketplacesCount,
-        semEstoque,
-        estoqueBaixo
-      },
-      topProducts,
-      marginsByCategory,
-      mktStats,
-      monthlyEvolution
-    });
   });
 
-  // --- VITE DEV MIDDLEWARE OR PRODUCTION STATIC ROUTING ---
+  app.delete("/api/expenses/:id", authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const id = parseInt(req.params.id);
+
+      const { rows: expRows } = await client.query(`SELECT * FROM despesas WHERE id=$1`, [id]);
+      if (expRows.length === 0) return res.status(404).json({ message: "Lançamento não encontrado." });
+
+      const expense = expRows[0];
+
+      // Estornar estoque se for entrada de produto
+      if (expense.tipo === "PRODUTO" && expense.produto_id && expense.quantidade) {
+        await client.query(
+          `UPDATE produtos SET quantidade_estoque = GREATEST(0, quantidade_estoque - $1) WHERE id = $2`,
+          [expense.quantidade, expense.produto_id]
+        );
+      }
+
+      await client.query(`DELETE FROM despesas WHERE id=$1`, [id]);
+      await client.query("COMMIT");
+      res.json({ message: "Lançamento excluído com sucesso." });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // ================================================================
+  // ORDERS CRUD
+  // ================================================================
+  app.get("/api/orders", async (req, res) => {
+    try {
+      const marketplaceId = req.query.marketplaceId ? parseInt(req.query.marketplaceId as string) : null;
+      const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : null;
+      const produtoId = req.query.produtoId ? parseInt(req.query.produtoId as string) : null;
+      const startDate = req.query.startDate as string || null;
+      const endDate = req.query.endDate as string || null;
+
+      let query = `
+        SELECT p.id, p.marketplace_id AS "marketplaceId", m.nome AS "marketplaceNome",
+               p.comissao_tipo AS "comissaoTipo", p.comissao_valor AS "comissaoValor",
+               p.comissao_informada AS "comissaoInformada", p.frete, p.taxa_fixa AS "taxaFixa",
+               p.valor_venda AS "valorVenda", p.lucro_bruto AS "lucroBruto",
+               p.lucro_liquido AS "lucroLiquido", p.margem_bruta AS "margemBruta",
+               p.margem_liquida AS "margemLiquida", p.data_pedido AS "dataPedido",
+               json_agg(json_build_object(
+                 'produtoId', pi.produto_id,
+                 'produtoNome', pr.nome,
+                 'produtoCusto', pr.custo,
+                 'categoriaId', pi.categoria_id,
+                 'categoriaNome', c.nome,
+                 'quantidade', pi.quantidade,
+                 'valorVenda', pi.valor_venda
+               )) AS items
+        FROM pedidos p
+        LEFT JOIN marketplaces m ON m.id = p.marketplace_id
+        LEFT JOIN pedido_itens pi ON pi.pedido_id = p.id
+        LEFT JOIN produtos pr ON pr.id = pi.produto_id
+        LEFT JOIN categorias c ON c.id = pi.categoria_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (marketplaceId) { params.push(marketplaceId); query += ` AND p.marketplace_id = $${params.length}`; }
+      if (categoryId) { params.push(categoryId); query += ` AND pi.categoria_id = $${params.length}`; }
+      if (produtoId) { params.push(produtoId); query += ` AND pi.produto_id = $${params.length}`; }
+      if (startDate) { params.push(startDate); query += ` AND p.data_pedido >= $${params.length}`; }
+      if (endDate) { params.push(endDate); query += ` AND p.data_pedido <= $${params.length}`; }
+
+      query += ` GROUP BY p.id, m.nome ORDER BY p.data_pedido DESC`;
+
+      const { rows } = await pool.query(query, params);
+
+      // Formata para o frontend: produtoNome do primeiro item
+      const result = rows.map(row => {
+        const items = row.items || [];
+        const firstItem = items[0] || {};
+        return {
+          ...row,
+          produtoId: firstItem.produtoId,
+          produtoNome: items.length === 1
+            ? firstItem.produtoNome
+            : items.length > 1
+              ? `${firstItem.produtoNome} (+ ${items.length - 1} item(ns))`
+              : "Sem Itens",
+          produtoCusto: firstItem.produtoCusto || 0,
+          categoriaId: firstItem.categoriaId,
+          categoriaNome: firstItem.categoriaNome || "Desconhecida",
+        };
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/orders", authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const {
+        items, produtoId, marketplaceId, quantidade, valorVenda,
+        comissaoTipo, comissaoInformada, frete, taxaFixa
+      } = req.body;
+
+      if (!marketplaceId) return res.status(400).json({ message: "O marketplace é obrigatório." });
+
+      const mktCheck = await client.query(`SELECT id FROM marketplaces WHERE id=$1`, [parseInt(marketplaceId)]);
+      if (mktCheck.rows.length === 0) return res.status(404).json({ message: "Marketplace não encontrado." });
+
+      if (frete < 0) return res.status(400).json({ message: "O frete não pode ser negativo." });
+      if (taxaFixa < 0) return res.status(400).json({ message: "A taxa fixa não pode ser negativa." });
+      if (comissaoInformada < 0) return res.status(400).json({ message: "A comissão não pode ser negativa." });
+
+      let orderItems: any[] = [];
+      if (items && Array.isArray(items) && items.length > 0) {
+        orderItems = items;
+      } else {
+        if (!produtoId) return res.status(400).json({ message: "O produto é obrigatório." });
+        if (!quantidade || quantidade <= 0) return res.status(400).json({ message: "Quantidade deve ser maior que zero." });
+        orderItems = [{ produtoId, quantidade, valorVenda }];
+      }
+
+      let totalCustoSKU = 0;
+      let totalValorVenda = 0;
+      const validatedItems: any[] = [];
+
+      for (const item of orderItems) {
+        const pId = parseInt(item.produtoId);
+        const qty = parseInt(item.quantidade);
+        const sVal = parseFloat(item.valorVenda);
+        if (isNaN(pId) || isNaN(qty) || qty <= 0 || isNaN(sVal) || sVal < 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "Dados de item inválidos." });
+        }
+
+        const { rows: prodRows } = await client.query(
+          `SELECT id, nome, custo, quantidade_estoque, categoria_id FROM produtos WHERE id=$1 FOR UPDATE`,
+          [pId]
+        );
+        if (prodRows.length === 0) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ message: `Produto com ID ${pId} não encontrado.` });
+        }
+        const prod = prodRows[0];
+        if (prod.quantidade_estoque < qty) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: `Estoque insuficiente para "${prod.nome}". Disponível: ${prod.quantidade_estoque}. Solicitado: ${qty}.` });
+        }
+
+        await client.query(`UPDATE produtos SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2`, [qty, pId]);
+
+        totalCustoSKU += prod.custo * qty;
+        totalValorVenda += sVal;
+        validatedItems.push({ produtoId: pId, quantidade: qty, valorVenda: sVal, categoriaId: prod.categoria_id });
+      }
+
+      const fin = calcFinancials(totalValorVenda, totalCustoSKU, Number(frete), Number(taxaFixa), comissaoTipo, Number(comissaoInformada));
+
+      const { rows: orderRows } = await client.query(
+        `INSERT INTO pedidos (marketplace_id, comissao_tipo, comissao_valor, comissao_informada, frete, taxa_fixa,
+          valor_venda, lucro_bruto, lucro_liquido, margem_bruta, margem_liquida)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+        [parseInt(marketplaceId), comissaoTipo, fin.comissaoValor, Number(comissaoInformada),
+          Number(frete), Number(taxaFixa), totalValorVenda, fin.lucroBruto,
+          fin.lucroLiquido, fin.margemBruta, fin.margemLiquida]
+      );
+      const orderId = orderRows[0].id;
+
+      for (const item of validatedItems) {
+        await client.query(
+          `INSERT INTO pedido_itens (pedido_id, produto_id, categoria_id, quantidade, valor_venda) VALUES ($1,$2,$3,$4,$5)`,
+          [orderId, item.produtoId, item.categoriaId, item.quantidade, item.valorVenda]
+        );
+      }
+
+      await client.query("COMMIT");
+      res.status(201).json({ id: orderId, message: "Pedido registrado com sucesso." });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.put("/api/orders/:id", authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const orderId = parseInt(req.params.id);
+      const { items, marketplaceId, comissaoTipo, comissaoInformada, frete, taxaFixa } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) return res.status(400).json({ message: "O pedido deve conter pelo menos um item." });
+
+      const { rows: oldItemRows } = await client.query(`SELECT produto_id, quantidade FROM pedido_itens WHERE pedido_id=$1`, [orderId]);
+      if (oldItemRows.length === 0) return res.status(404).json({ message: "Pedido não encontrado." });
+
+      // Estorna estoque antigo
+      for (const oi of oldItemRows) {
+        await client.query(`UPDATE produtos SET quantidade_estoque = quantidade_estoque + $1 WHERE id = $2`, [oi.quantidade, oi.produto_id]);
+      }
+
+      let totalCustoSKU = 0;
+      let totalValorVenda = 0;
+      const validatedItems: any[] = [];
+
+      for (const item of items) {
+        const pId = parseInt(item.produtoId);
+        const qty = parseInt(item.quantidade);
+        const sVal = parseFloat(item.valorVenda);
+        if (isNaN(pId) || isNaN(qty) || qty <= 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "Dados de item inválidos." });
+        }
+
+        const { rows: prodRows } = await client.query(
+          `SELECT id, nome, custo, quantidade_estoque, categoria_id FROM produtos WHERE id=$1 FOR UPDATE`, [pId]
+        );
+        if (prodRows.length === 0) { await client.query("ROLLBACK"); return res.status(404).json({ message: `Produto ${pId} não encontrado.` }); }
+        const prod = prodRows[0];
+        if (prod.quantidade_estoque < qty) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: `Estoque insuficiente para "${prod.nome}". Disponível: ${prod.quantidade_estoque}. Solicitado: ${qty}.` });
+        }
+
+        await client.query(`UPDATE produtos SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2`, [qty, pId]);
+        totalCustoSKU += prod.custo * qty;
+        totalValorVenda += sVal;
+        validatedItems.push({ produtoId: pId, quantidade: qty, valorVenda: sVal, categoriaId: prod.categoria_id });
+      }
+
+      const fin = calcFinancials(totalValorVenda, totalCustoSKU, Number(frete), Number(taxaFixa), comissaoTipo, Number(comissaoInformada));
+
+      await client.query(
+        `UPDATE pedidos SET marketplace_id=$1, comissao_tipo=$2, comissao_valor=$3, comissao_informada=$4,
+          frete=$5, taxa_fixa=$6, valor_venda=$7, lucro_bruto=$8, lucro_liquido=$9, margem_bruta=$10, margem_liquida=$11
+         WHERE id=$12`,
+        [parseInt(marketplaceId), comissaoTipo, fin.comissaoValor, Number(comissaoInformada),
+          Number(frete), Number(taxaFixa), totalValorVenda, fin.lucroBruto,
+          fin.lucroLiquido, fin.margemBruta, fin.margemLiquida, orderId]
+      );
+
+      await client.query(`DELETE FROM pedido_itens WHERE pedido_id=$1`, [orderId]);
+      for (const item of validatedItems) {
+        await client.query(
+          `INSERT INTO pedido_itens (pedido_id, produto_id, categoria_id, quantidade, valor_venda) VALUES ($1,$2,$3,$4,$5)`,
+          [orderId, item.produtoId, item.categoriaId, item.quantidade, item.valorVenda]
+        );
+      }
+
+      await client.query("COMMIT");
+      res.json({ id: orderId, message: "Pedido atualizado com sucesso." });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete("/api/orders/:id", authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const orderId = parseInt(req.params.id);
+
+      const { rows: itemRows } = await client.query(`SELECT produto_id, quantidade FROM pedido_itens WHERE pedido_id=$1`, [orderId]);
+      if (itemRows.length === 0) return res.status(404).json({ message: "Pedido não encontrado." });
+
+      // Estorna estoque
+      for (const item of itemRows) {
+        await client.query(`UPDATE produtos SET quantidade_estoque = quantidade_estoque + $1 WHERE id = $2`, [item.quantidade, item.produto_id]);
+      }
+
+      await client.query(`DELETE FROM pedidos WHERE id=$1`, [orderId]);
+      await client.query("COMMIT");
+      res.json({ message: "Pedido estornado e excluído com sucesso. Estoque restaurado." });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // ================================================================
+  // DASHBOARD
+  // ================================================================
+  app.get("/api/dashboard", async (req, res) => {
+    try {
+      const { rows: orderStats } = await pool.query(`
+        SELECT
+          COUNT(*) AS "totalPedidos",
+          COALESCE(SUM(valor_venda),0) AS "totalVendido",
+          COALESCE(SUM(lucro_bruto),0) AS "lucroBrutoTotal",
+          COALESCE(SUM(lucro_liquido),0) AS "lucroLiquidoTotal",
+          COALESCE(AVG(NULLIF(margem_bruta,0)),0) AS "margemBrutaMedia",
+          COALESCE(AVG(NULLIF(margem_liquida,0)),0) AS "margemLiquidaMedia"
+        FROM pedidos
+      `);
+
+      const { rows: itemStats } = await pool.query(`
+        SELECT COALESCE(SUM(pi.quantidade),0) AS "totalQtdVendida"
+        FROM pedido_itens pi
+      `);
+
+      const { rows: prodStats } = await pool.query(`
+        SELECT COUNT(*) AS "produtosCadastrados",
+               COALESCE(SUM(quantidade_estoque),0) AS "totalEstoque",
+               COUNT(*) FILTER (WHERE quantidade_estoque = 0) AS "semEstoque",
+               COUNT(*) FILTER (WHERE quantidade_estoque > 0 AND quantidade_estoque <= 5) AS "estoqueBaixo"
+        FROM produtos
+      `);
+
+      const { rows: catStats } = await pool.query(`SELECT COUNT(*) AS "categoriasCount" FROM categorias`);
+      const { rows: mktCount } = await pool.query(`SELECT COUNT(*) AS "marketplacesCount" FROM marketplaces`);
+
+      const s = orderStats[0];
+      const totalVendido = Number(s.totalVendido);
+      const totalPedidos = Number(s.totalPedidos);
+
+      // Top products
+      const { rows: topProducts } = await pool.query(`
+        SELECT pr.nome AS "produtoNome",
+               SUM(pi.quantidade) AS "totalVendido",
+               SUM(pi.quantidade * pi.valor_venda) AS "receitaTotal"
+        FROM pedido_itens pi
+        JOIN produtos pr ON pr.id = pi.produto_id
+        GROUP BY pr.id, pr.nome
+        ORDER BY "totalVendido" DESC
+        LIMIT 5
+      `);
+
+      // Margins by category
+      const { rows: marginsByCategory } = await pool.query(`
+        SELECT c.nome AS "categoria",
+               COALESCE(AVG(p.margem_bruta),0) AS "margemBruta",
+               COALESCE(AVG(p.margem_liquida),0) AS "margemLiquida"
+        FROM pedidos p
+        JOIN pedido_itens pi ON pi.pedido_id = p.id
+        JOIN categorias c ON c.id = pi.categoria_id
+        GROUP BY c.id, c.nome
+        ORDER BY "margemLiquida" DESC
+      `);
+
+      // Stats by marketplace
+      const { rows: mktStats } = await pool.query(`
+        SELECT m.nome AS "marketplace",
+               COUNT(p.id) AS "totalPedidos",
+               COALESCE(SUM(p.valor_venda),0) AS "totalVendido",
+               COALESCE(SUM(p.lucro_liquido),0) AS "lucroLiquido"
+        FROM pedidos p
+        JOIN marketplaces m ON m.id = p.marketplace_id
+        GROUP BY m.id, m.nome
+        ORDER BY "totalVendido" DESC
+      `);
+
+      // Monthly evolution (last 6 months)
+      const { rows: monthlyEvolution } = await pool.query(`
+        SELECT TO_CHAR(data_pedido, 'YYYY-MM') AS "mes",
+               TO_CHAR(data_pedido, 'Mon/YY') AS "label",
+               COALESCE(SUM(valor_venda),0) AS "vendas",
+               COALESCE(SUM(lucro_liquido),0) AS "lucro",
+               COUNT(*) AS "pedidos"
+        FROM pedidos
+        WHERE data_pedido >= NOW() - INTERVAL '6 months'
+        GROUP BY TO_CHAR(data_pedido, 'YYYY-MM'), TO_CHAR(data_pedido, 'Mon/YY')
+        ORDER BY "mes"
+      `);
+
+      res.json({
+        indicators: {
+          totalVendido,
+          totalPedidos,
+          lucroBrutoTotal: Number(s.lucroBrutoTotal),
+          lucroLiquidoTotal: Number(s.lucroLiquidoTotal),
+          margemBrutaMedia: Number(Number(s.margemBrutaMedia).toFixed(2)),
+          margemLiquidaMedia: Number(Number(s.margemLiquidaMedia).toFixed(2)),
+          ticketMedio: totalPedidos > 0 ? Number((totalVendido / totalPedidos).toFixed(2)) : 0,
+          totalQtdVendida: Number(itemStats[0].totalQtdVendida),
+          produtosCadastrados: Number(prodStats[0].produtosCadastrados),
+          totalEstoque: Number(prodStats[0].totalEstoque),
+          categoriasCount: Number(catStats[0].categoriasCount),
+          marketplacesCount: Number(mktCount[0].marketplacesCount),
+          semEstoque: Number(prodStats[0].semEstoque),
+          estoqueBaixo: Number(prodStats[0].estoqueBaixo),
+        },
+        topProducts,
+        marginsByCategory,
+        mktStats,
+        monthlyEvolution
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ================================================================
+  // FRONTEND STATIC / VITE DEV
+  // ================================================================
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1417,13 +967,14 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get("*", (_req, resStatic) => {
+      resStatic.sendFile(path.join(distPath, "index.html"));
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`>>> Servidor rodando na porta ${PORT}`);
+    console.log(`>>> Conectado ao Supabase PostgreSQL`);
   });
 }
 
