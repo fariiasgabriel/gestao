@@ -1,7 +1,12 @@
 import express from "express";
-import path from "path";
-import { createServer as createViteServer } from "vite";
-import { Pool } from "pg";
+import cors from "cors";
+
+// Enable CORS with Authorization header support
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
 // =============================================================
 // conexão banco de dados — Supabase (PostgreSQL)
@@ -16,9 +21,9 @@ const MOCK_PASSWORD = process.env.MOCK_PASSWORD || "201981";
 const MOCK_TOKEN = "mock-jwt-token-admin";
 
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(' ')[1];
   console.log('[Auth] Received token:', token);
+  console.log('[Auth] Token matches mock?', token === MOCK_TOKEN);
+  console.log('[Auth] Request headers:', req.headers);
   if (!token) {
     res.status(401).json({ message: "Acesso negado. Token não fornecido." });
     return;
