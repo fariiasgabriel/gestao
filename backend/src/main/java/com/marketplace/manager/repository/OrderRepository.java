@@ -11,13 +11,17 @@ import java.util.List;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    @Query("SELECT o FROM Order o WHERE " +
-           "(:marketplaceId IS NULL OR o.marketplace.id = :marketplaceId) AND " +
-           "(:categoryId IS NULL OR o.category.id = :categoryId) AND " +
-           "(:productId IS NULL OR o.product.id = :productId) AND " +
-           "(:startDate IS NULL OR o.dataPedido >= :startDate) AND " +
-           "(:endDate IS NULL OR o.dataPedido <= :endDate) " +
-           "ORDER BY o.dataPedido DESC")
+  @Query("""
+SELECT o
+FROM Order o
+WHERE
+(:marketplaceId IS NULL OR o.marketplace.id = :marketplaceId)
+AND (:categoryId IS NULL OR o.category.id = :categoryId)
+AND (:productId IS NULL OR o.product.id = :productId)
+AND (CAST(:startDate AS LocalDateTime) IS NULL OR o.dataPedido >= :startDate)
+AND (CAST(:endDate AS LocalDateTime) IS NULL OR o.dataPedido <= :endDate)
+ORDER BY o.dataPedido DESC
+""")
     List<Order> findFilteredOrders(
         @Param("marketplaceId") Long marketplaceId,
         @Param("categoryId") Long categoryId,
