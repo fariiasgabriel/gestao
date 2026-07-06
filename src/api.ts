@@ -14,6 +14,7 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
+    console.log("[API] Sending request with token:", token);
     // Ensure headers object exists
     config.headers = config.headers || {};
     if (token) {

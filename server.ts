@@ -17,7 +17,8 @@ const MOCK_TOKEN = "mock-jwt-token-admin";
 
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  const token = authHeader && authHeader.split(' ')[1];
+  console.log('[Auth] Received token:', token);
   if (!token) {
     res.status(401).json({ message: "Acesso negado. Token não fornecido." });
     return;
