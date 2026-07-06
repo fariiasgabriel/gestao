@@ -15,20 +15,7 @@ const MOCK_USERNAME = process.env.MOCK_USERNAME || "Gabriel";
 const MOCK_PASSWORD = process.env.MOCK_PASSWORD || "201981";
 const MOCK_TOKEN = "mock-jwt-token-admin";
 
-const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(' ')[1]?.trim();
-  
-  if (!token) {
-    res.status(401).json({ message: "Acesso negado. Token não fornecido." });
-    return;
-  }
-  if (token === MOCK_TOKEN) {
-    next();
-  } else {
-    res.status(403).json({ message: "Token inválido ou expirado." });
-  }
-};
+
 
 
 function calcFinancials(
