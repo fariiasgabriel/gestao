@@ -30,7 +30,6 @@ public class SupplierController {
     @GetMapping("/{id}")
     @Operation(summary = "Obter fornecedor por ID")
     public ResponseEntity<SupplierDTO> getById(@PathVariable Long id) {
-        // Reutiliza o serviço para buscar por ID (não existe método direto, então usamos busca geral)
         SupplierDTO dto = supplierService.getAllSuppliers(null).stream()
                 .filter(s -> s.getId().equals(id))
                 .findFirst()
