@@ -19,6 +19,8 @@ const MOCK_TOKEN = "mock-jwt-token-admin";
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers["authorization"] as string | undefined;
   const token = authHeader && authHeader.split(' ')[1]?.trim();
+  console.log('[Auth] Received token:', token);
+  console.log('[Auth] Token starts with eyJ?', token?.startsWith('eyJ'));
   if (!token) {
     return res.status(401).json({ message: "Acesso negado. Token não fornecido." });
   }
@@ -324,6 +326,7 @@ async function startServer() {
       );
       res.status(201).json(rows[0]);
     } catch (err: any) {
+      if (err.code === "23505") return res.status(400).json({ message: "Já existe um fornecedor com esse nome." });
       res.status(500).json({ message: err.message });
     }
   });
