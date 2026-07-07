@@ -6,7 +6,7 @@ import cors from "cors";
 // =============================================================
 // conexão banco de dados — Supabase (PostgreSQL)
 // =============================================================
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
@@ -16,7 +16,7 @@ const MOCK_PASSWORD = process.env.MOCK_PASSWORD || "201981";
 const MOCK_TOKEN = "mock-jwt-token-admin";
 
 // Authentication middleware – validates Authorization header against mock token
-const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+export const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers["authorization"] as string | undefined;
   const token = authHeader && authHeader.split(' ')[1]?.trim();
   console.log('[Auth] Received token:', token);
@@ -307,56 +307,10 @@ async function startServer() {
   });
 
 
-  app.get("/api/suppliers", async (req, res) => {
-    try {
-      const { rows } = await pool.query(`SELECT id, nome, contato, telefone, cnpj FROM fornecedores ORDER BY nome`);
-      res.json(rows);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.post("/api/suppliers", authenticateToken, async (req, res) => {
-    try {
-      const { nome, contato, telefone, cnpj } = req.body;
-      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do fornecedor é obrigatório." });
-      const { rows } = await pool.query(
-        `INSERT INTO fornecedores (nome, contato, telefone, cnpj) VALUES ($1,$2,$3,$4) RETURNING *`,
-        [nome.trim(), contato || null, telefone || null, cnpj || null]
-      );
-      res.status(201).json(rows[0]);
-    } catch (err: any) {
-      if (err.code === "23505") return res.status(400).json({ message: "Já existe um fornecedor com esse nome." });
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.put("/api/suppliers/:id", authenticateToken, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { nome, contato, telefone, cnpj } = req.body;
-      if (!nome || nome.trim() === "") return res.status(400).json({ message: "O nome do fornecedor é obrigatório." });
-      const { rows } = await pool.query(
-        `UPDATE fornecedores SET nome=$1, contato=$2, telefone=$3, cnpj=$4 WHERE id=$5 RETURNING *`,
-        [nome.trim(), contato || null, telefone || null, cnpj || null, id]
-      );
-      if (rows.length === 0) return res.status(404).json({ message: "Fornecedor não encontrado." });
-      res.json(rows[0]);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.delete("/api/suppliers/:id", authenticateToken, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { rowCount } = await pool.query(`DELETE FROM fornecedores WHERE id=$1`, [id]);
-      if (rowCount === 0) return res.status(404).json({ message: "Fornecedor não encontrado." });
-      res.json({ message: "Fornecedor excluído com sucesso." });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
+// ---------- Suppliers CRUD (refactored) ----------
+import supplierRouter from "./src/controllers/SupplierController";
+app.use(supplierRouter);
+// ----------------------------------------------
 
 
   app.get("/api/products", async (req, res) => {
