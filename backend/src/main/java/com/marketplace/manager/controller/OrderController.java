@@ -1,5 +1,6 @@
 package com.marketplace.manager.controller;
 
+import com.marketplace.manager.dto.OrderBatchRequestDTO;
 import com.marketplace.manager.dto.OrderRequestDTO;
 import com.marketplace.manager.dto.OrderResponseDTO;
 import com.marketplace.manager.service.OrderService;
@@ -35,10 +36,10 @@ public class OrderController {
     }
 
     @PostMapping
-    @Operation(summary = "Lançar novo pedido (atualiza estoque e calcula lucros)")
-    public ResponseEntity<?> createOrder(@Valid @RequestBody OrderRequestDTO dto) {
+    @Operation(summary = "Lançar novo pedido com múltiplos itens")
+    public ResponseEntity<?> createOrder(@Valid @RequestBody OrderBatchRequestDTO dto) {
         try {
-            OrderResponseDTO created = orderService.create(dto);
+            List<OrderResponseDTO> created = orderService.createBatch(dto);
             return ResponseEntity.status(HttpStatus.CREATED).body(created);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());

@@ -1,5 +1,6 @@
 package com.marketplace.manager.service;
 
+import com.marketplace.manager.dto.OrderBatchRequestDTO;
 import com.marketplace.manager.dto.OrderRequestDTO;
 import com.marketplace.manager.dto.OrderResponseDTO;
 import com.marketplace.manager.model.Category;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -116,6 +118,26 @@ public class OrderService {
                                 .build();
 
                 return convertToDTO(orderRepository.save(order));
+        }
+
+        @Transactional
+        public List<OrderResponseDTO> createBatch(OrderBatchRequestDTO batchDto) {
+                List<OrderResponseDTO> results = new ArrayList<>();
+
+                for (OrderBatchRequestDTO.OrderBatchItemDTO item : batchDto.getItems()) {
+                        OrderRequestDTO dto = OrderRequestDTO.builder()
+                                .produtoId(item.getProdutoId())
+                                .marketplaceId(batchDto.getMarketplaceId())
+                                .quantidade(item.getQuantidade())
+                                .valorVenda(item.getValorVenda())
+                                .comissaoTipo(batchDto.getComissaoTipo())
+                                .comissaoInformada(batchDto.getComissaoInformada())
+                                .frete(batchDto.getFrete())
+                                .taxaFixa(batchDto.getTaxaFixa())
+                                .build();
+                        results.add(create(dto));
+                }
+                return results;
         }
 
         @Transactional
