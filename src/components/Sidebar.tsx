@@ -50,19 +50,18 @@ export default function Sidebar({ currentView, onNavigate, onLogout, isOpen = tr
       {/* Overlay for mobile */}
       {isOpen && onClose && (
         <div
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={onClose}
         />
       )}
 
       <div className={`
-        fixed lg:static inset-y-0 left-0 z-30
-        w-64 bg-slate-900 text-slate-100 flex flex-col min-h-screen border-r border-slate-800
+        fixed lg:static inset-y-0 left-0 z-50
+        w-64 bg-slate-900 text-slate-100 flex flex-col h-[100dvh] lg:h-screen border-r border-slate-800
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0 lg:transition-none
       `}>
-        {/* Brand Header */}
         <div className="p-5 border-b border-slate-800 flex items-center gap-3">
           <div className="p-2 bg-emerald-500 rounded-lg text-slate-900">
             <TrendingUp className="w-5 h-5" />
@@ -71,7 +70,6 @@ export default function Sidebar({ currentView, onNavigate, onLogout, isOpen = tr
             <h1 className="font-bold text-base leading-tight tracking-tight">MktManager</h1>
             <span className="text-xs text-slate-400 font-mono">v1.0.0</span>
           </div>
-          {/* Close button for mobile */}
           {onClose && (
             <button
               onClick={onClose}
@@ -82,7 +80,6 @@ export default function Sidebar({ currentView, onNavigate, onLogout, isOpen = tr
           )}
         </div>
 
-        {/* Navigation List */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon;

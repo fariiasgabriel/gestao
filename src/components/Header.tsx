@@ -39,7 +39,6 @@ export default function Header({ currentView, onMenuClick }: HeaderProps) {
 
   return (
     <header className="bg-white border-b border-slate-200 h-14 sm:h-16 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 gap-3">
-      {/* Hamburger + Title */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuClick}
@@ -61,13 +60,11 @@ export default function Header({ currentView, onMenuClick }: HeaderProps) {
           <span>{formattedTime()}</span>
         </div>
 
-        {/* Status */}
         <div className="flex items-center gap-1 sm:gap-1.5 bg-emerald-50 text-emerald-700 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-semibold border border-emerald-100">
           <ShieldCheck className="w-3.5 h-3.5" />
           <span className="font-mono hidden sm:inline">ONLINE</span>
         </div>
 
-        {/* Bell */}
         <button className="p-2 rounded-full border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all relative">
           <Bell className="w-4 h-4" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full border border-white"></span>

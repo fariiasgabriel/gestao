@@ -202,7 +202,7 @@ export default function DashboardView() {
               {formatBRL(safeNum(indicators.totalEstoqueValor))}
             </h4>
             <span className="text-[10px] sm:text-xs text-emerald-600 font-medium block mt-1 font-mono">
-              ★ Estoque disponível
+              ★ {safeNum(indicators.totalEstoque)} itens disponíveis
             </span>
           </div>
           <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl flex-shrink-0">

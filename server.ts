@@ -677,7 +677,7 @@ app.use(supplierRouter);
       `);
 
       // Stock value query
-      const { rows: stockValueRows } = await pool.query(`SELECT COALESCE(SUM(p.custo * p.quantidade_estoque),0) AS "totalEstoqueValor" FROM produtos p`);
+      const { rows: stockValueRows } = await pool.query(`SELECT COALESCE(SUM(COALESCE(p.custo, 0) * COALESCE(p.quantidade_estoque, 0)),0) AS "totalEstoqueValor" FROM produtos p`);
       const totalEstoqueValor = Number(stockValueRows[0].totalEstoqueValor);
 
       const { rows: catStats } = await pool.query(`SELECT COUNT(*) AS "categoriasCount" FROM categorias`);
