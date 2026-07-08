@@ -34,6 +34,10 @@ public class DashboardResponse {
         private Long marketplacesCount;
         private Long semEstoque;
         private Long estoqueBaixo;
+        private BigDecimal totalEstoqueValor;
+        private BigDecimal custosOperacionaisMes;
+        private BigDecimal custosEstoqueMes;
+        private BigDecimal totalDespesasMes;
     }
 
     @Data
@@ -77,5 +81,8 @@ public class DashboardResponse {
         private BigDecimal lucroBruto;
         private BigDecimal lucroLiquido;
         private Long pedidos;
+        private BigDecimal custosEntrada;
+        private BigDecimal custosGerais;
+        private BigDecimal totalCustos;
     }
 }

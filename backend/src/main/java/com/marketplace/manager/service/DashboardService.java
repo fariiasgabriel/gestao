@@ -5,10 +5,12 @@ import com.marketplace.manager.model.Category;
 import com.marketplace.manager.model.Marketplace;
 import com.marketplace.manager.model.Order;
 import com.marketplace.manager.model.Product;
+import com.marketplace.manager.model.Expense;
 import com.marketplace.manager.repository.CategoryRepository;
 import com.marketplace.manager.repository.MarketplaceRepository;
 import com.marketplace.manager.repository.OrderRepository;
 import com.marketplace.manager.repository.ProductRepository;
+import com.marketplace.manager.repository.ExpenseRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,12 +35,16 @@ public class DashboardService {
         @Autowired
         private MarketplaceRepository marketplaceRepository;
 
+        @Autowired
+        private ExpenseRepository expenseRepository;
+
         @Transactional(readOnly = true)
         public DashboardResponse getDashboardData() {
                 List<Order> orders = orderRepository.findAll();
                 List<Product> products = productRepository.findAll();
                 List<Category> categories = categoryRepository.findAll();
                 List<Marketplace> marketplaces = marketplaceRepository.findAll();
+                List<Expense> expenses = expenseRepository.findAll();
 
                 Long totalPedidos = (long) orders.size();
                 BigDecimal totalVendido = orders.stream()
@@ -83,6 +89,31 @@ public class DashboardService {
                                 .filter(p -> p.getQuantidadeEstoque() > 0 && p.getQuantidadeEstoque() <= 5)
                                 .count();
 
+                BigDecimal totalEstoqueValor = products.stream()
+                                .map(p -> {
+                                        BigDecimal c = p.getCusto() != null ? p.getCusto() : BigDecimal.ZERO;
+                                        Long q = p.getQuantidadeEstoque() != null ? (long) p.getQuantidadeEstoque() : 0L;
+                                        return c.multiply(BigDecimal.valueOf(q));
+                                })
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                java.time.YearMonth currentMonth = java.time.YearMonth.now();
+                BigDecimal custosOperacionaisMes = expenses.stream()
+                                .filter(e -> e.getData() != null && java.time.YearMonth.from(e.getData()).equals(currentMonth))
+                                .filter(e -> "GERAL".equalsIgnoreCase(e.getTipo()))
+                                .map(Expense::getValor)
+                                .filter(Objects::nonNull)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal custosEstoqueMes = expenses.stream()
+                                .filter(e -> e.getData() != null && java.time.YearMonth.from(e.getData()).equals(currentMonth))
+                                .filter(e -> "PRODUTO".equalsIgnoreCase(e.getTipo()))
+                                .map(Expense::getValor)
+                                .filter(Objects::nonNull)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal totalDespesasMes = custosOperacionaisMes.add(custosEstoqueMes);
+
                 DashboardResponse.IndicatorsDTO indicators = DashboardResponse.IndicatorsDTO.builder()
                                 .totalVendido(totalVendido).totalPedidos(totalPedidos)
                                 .lucroBrutoTotal(lucroBrutoTotal).lucroLiquidoTotal(lucroLiquidoTotal)
@@ -96,6 +127,10 @@ public class DashboardService {
                                 .marketplacesCount(marketplacesCount)
                                 .semEstoque(semEstoque)
                                 .estoqueBaixo(estoqueBaixo)
+                                .totalEstoqueValor(totalEstoqueValor)
+                                .custosOperacionaisMes(custosOperacionaisMes)
+                                .custosEstoqueMes(custosEstoqueMes)
+                                .totalDespesasMes(totalDespesasMes)
                                 .build();
 
                 Map<Product, Long> productQtyMap = orders.stream()
@@ -201,6 +236,22 @@ public class DashboardService {
                                                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                                         long pCount = list.size();
 
+                                        BigDecimal custosEntrada = expenses.stream()
+                                                        .filter(e -> e.getData() != null && e.getData().format(DateTimeFormatter.ofPattern("yyyy-MM")).equals(yyyyMM))
+                                                        .filter(e -> "PRODUTO".equalsIgnoreCase(e.getTipo()))
+                                                        .map(Expense::getValor)
+                                                        .filter(Objects::nonNull)
+                                                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                                        
+                                        BigDecimal custosGerais = expenses.stream()
+                                                        .filter(e -> e.getData() != null && e.getData().format(DateTimeFormatter.ofPattern("yyyy-MM")).equals(yyyyMM))
+                                                        .filter(e -> "GERAL".equalsIgnoreCase(e.getTipo()))
+                                                        .map(Expense::getValor)
+                                                        .filter(Objects::nonNull)
+                                                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                                        BigDecimal totalCustos = custosEntrada.add(custosGerais);
+
                                         String[] split = yyyyMM.split("-");
                                         int year = Integer.parseInt(split[0]);
                                         int month = Integer.parseInt(split[1]);
@@ -212,7 +263,7 @@ public class DashboardService {
                                                 label = label.substring(0, 1).toUpperCase() + label.substring(1);
                                         }
 
-                                        return new DashboardResponse.MonthlyEvolutionDTO(label, v, b, liq, pCount);
+                                        return new DashboardResponse.MonthlyEvolutionDTO(label, v, b, liq, pCount, custosEntrada, custosGerais, totalCustos);
                                 })
                                 .sorted(Comparator.comparing(DashboardResponse.MonthlyEvolutionDTO::getMes)) // Sort
                                                                                                              // alphabetically/chronologically
