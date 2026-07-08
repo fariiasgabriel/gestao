@@ -61,7 +61,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           </p>
         </div>
 
-        {/* Error Notification */}
         {error && (
           <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 p-4 rounded-2xl text-sm mb-6 animate-shake">
             <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-400" />
@@ -69,9 +68,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           </div>
         )}
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Username */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
               Usuário
@@ -91,7 +88,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             </div>
           </div>
 
-          {/* Password */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
               Senha
@@ -124,7 +120,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
         {/* Footer info */}
         <p className="text-center text-xs text-slate-500 mt-8">
-          Enterprise Systems Core © {new Date().getFullYear()}
+          Dev: Gabriel Farias {new Date().getFullYear()}
         </p>
       </div>
     </div>

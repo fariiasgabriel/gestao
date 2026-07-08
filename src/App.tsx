@@ -17,6 +17,7 @@ export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
   const [username, setUsername] = useState<string | null>(localStorage.getItem("username"));
   const [currentView, setCurrentView] = useState<string>("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
@@ -73,17 +74,23 @@ export default function App() {
 
   return (
     <div className="flex bg-slate-50 min-h-screen text-slate-600 font-sans antialiased">
-      {/* Sidebar Navigation Panel (256px wide) */}
+      {/* Sidebar: hidden on mobile, always visible on lg+ */}
       <Sidebar
         currentView={currentView}
         onNavigate={setCurrentView}
         onLogout={handleLogout}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
-      <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        <Header currentView={currentView} />
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-h-screen min-w-0 lg:ml-0">
+        <Header
+          currentView={currentView}
+          onMenuClick={() => setSidebarOpen(true)}
+        />
 
-        <main className="flex-1 p-8 overflow-y-auto max-w-[1600px] w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-[1600px] w-full mx-auto">
           {renderViewContent()}
         </main>
       </div>

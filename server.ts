@@ -664,8 +664,8 @@ app.use(supplierRouter);
       `);
 
       const { rows: itemStats } = await pool.query(`
-        SELECT COALESCE(SUM(pi.quantidade),0) AS "totalQtdVendida"
-        FROM pedido_itens pi
+        SELECT COALESCE(SUM(quantidade),0) AS "totalQtdVendida"
+        FROM pedidos
       `);
 
       const { rows: prodStats } = await pool.query(`
@@ -683,54 +683,113 @@ app.use(supplierRouter);
       const { rows: catStats } = await pool.query(`SELECT COUNT(*) AS "categoriasCount" FROM categorias`);
       const { rows: mktCount } = await pool.query(`SELECT COUNT(*) AS "marketplacesCount" FROM marketplaces`);
 
+      // Monthly operational costs from despesas table
+      const { rows: monthlyExpenses } = await pool.query(`
+        SELECT
+          TO_CHAR(data, 'YYYY-MM') AS "mes",
+          COALESCE(SUM(CASE WHEN tipo='PRODUTO' THEN valor ELSE 0 END), 0) AS "custosEntrada",
+          COALESCE(SUM(CASE WHEN tipo='GERAL' THEN valor ELSE 0 END), 0) AS "custosGerais",
+          COALESCE(SUM(valor), 0) AS "totalCustos"
+        FROM despesas
+        WHERE data >= NOW() - INTERVAL '6 months'
+        GROUP BY TO_CHAR(data, 'YYYY-MM')
+        ORDER BY "mes"
+      `);
+
+      // Current month expenses for card
+      const { rows: currentMonthExpenses } = await pool.query(`
+        SELECT
+          COALESCE(SUM(CASE WHEN tipo='GERAL' THEN valor ELSE 0 END), 0) AS "custosOperacionais",
+          COALESCE(SUM(CASE WHEN tipo='PRODUTO' THEN valor ELSE 0 END), 0) AS "custosEstoque",
+          COALESCE(SUM(valor), 0) AS "totalDespesas"
+        FROM despesas
+        WHERE DATE_TRUNC('month', data) = DATE_TRUNC('month', NOW())
+      `);
+
       const s = orderStats[0];
       const totalVendido = Number(s.totalVendido);
       const totalPedidos = Number(s.totalPedidos);
 
       const { rows: topProducts } = await pool.query(`
-        SELECT pr.nome AS "produtoNome",
-               SUM(pi.quantidade) AS "totalVendido",
-               SUM(pi.quantidade * pi.valor_venda) AS "receitaTotal"
-        FROM pedido_itens pi
-        JOIN produtos pr ON pr.id = pi.produto_id
+        SELECT pr.nome,
+               SUM(p.quantidade) AS "qty",
+               SUM(p.valor_venda) AS "totalValue"
+        FROM pedidos p
+        JOIN produtos pr ON pr.id = p.produto_id
         GROUP BY pr.id, pr.nome
-        ORDER BY "totalVendido" DESC
-        LIMIT 5
+        ORDER BY "qty" DESC
+        LIMIT 10
       `);
 
       const { rows: marginsByCategory } = await pool.query(`
         SELECT c.nome AS "categoria",
                COALESCE(AVG(p.margem_bruta),0) AS "margemBruta",
-               COALESCE(AVG(p.margem_liquida),0) AS "margemLiquida"
+               COALESCE(AVG(p.margem_liquida),0) AS "margemLiquida",
+               COALESCE(SUM(p.valor_venda),0) AS "venda"
         FROM pedidos p
-        JOIN pedido_itens pi ON pi.pedido_id = p.id
-        JOIN categorias c ON c.id = pi.categoria_id
+        JOIN categorias c ON c.id = p.categoria_id
         GROUP BY c.id, c.nome
         ORDER BY "margemLiquida" DESC
       `);
 
-      const { rows: mktStats } = await pool.query(`
+      const { rows: mktStatsRaw } = await pool.query(`
         SELECT m.nome AS "marketplace",
-               COUNT(p.id) AS "totalPedidos",
-               COALESCE(SUM(p.valor_venda),0) AS "totalVendido",
-               COALESCE(SUM(p.lucro_liquido),0) AS "lucroLiquido"
+               COUNT(p.id) AS "pedidos",
+               COALESCE(SUM(p.valor_venda),0) AS "valorVendido",
+               COALESCE(SUM(p.lucro_bruto),0) AS "lucroBruto",
+               COALESCE(SUM(p.lucro_liquido),0) AS "lucroLiquido",
+               COALESCE(AVG(NULLIF(p.margem_bruta,0)),0) AS "margemBruta",
+               COALESCE(AVG(NULLIF(p.margem_liquida,0)),0) AS "margemLiquida"
         FROM pedidos p
         JOIN marketplaces m ON m.id = p.marketplace_id
         GROUP BY m.id, m.nome
-        ORDER BY "totalVendido" DESC
+        ORDER BY "valorVendido" DESC
       `);
 
-      const { rows: monthlyEvolution } = await pool.query(`
+      const mktStats = mktStatsRaw.map((m: any) => ({
+        marketplace: m.marketplace,
+        pedidos: Number(m.pedidos),
+        valorVendido: Number(m.valorVendido),
+        lucroBruto: Number(m.lucroBruto),
+        lucroLiquido: Number(m.lucroLiquido),
+        margemBruta: Number(Number(m.margemBruta).toFixed(2)),
+        margemLiquida: Number(Number(m.margemLiquida).toFixed(2)),
+      }));
+
+      const { rows: monthlyRaw } = await pool.query(`
         SELECT TO_CHAR(data_pedido, 'YYYY-MM') AS "mes",
                TO_CHAR(data_pedido, 'Mon/YY') AS "label",
                COALESCE(SUM(valor_venda),0) AS "vendas",
-               COALESCE(SUM(lucro_liquido),0) AS "lucro",
+               COALESCE(SUM(lucro_liquido),0) AS "lucroLiquido",
+               COALESCE(SUM(lucro_bruto),0) AS "lucroBruto",
                COUNT(*) AS "pedidos"
         FROM pedidos
         WHERE data_pedido >= NOW() - INTERVAL '6 months'
         GROUP BY TO_CHAR(data_pedido, 'YYYY-MM'), TO_CHAR(data_pedido, 'Mon/YY')
         ORDER BY "mes"
       `);
+
+      // Merge monthly orders with monthly expenses
+      const expensesByMonth: Record<string, any> = {};
+      for (const row of monthlyExpenses) {
+        expensesByMonth[row.mes] = row;
+      }
+
+      const monthlyEvolution = monthlyRaw.map((row: any) => {
+        const exp = expensesByMonth[row.mes] || {};
+        return {
+          mes: row.label || row.mes,
+          vendas: Number(row.vendas),
+          lucroLiquido: Number(row.lucroLiquido),
+          lucroBruto: Number(row.lucroBruto),
+          pedidos: Number(row.pedidos),
+          custosEntrada: Number(exp.custosEntrada || 0),
+          custosGerais: Number(exp.custosGerais || 0),
+          totalCustos: Number(exp.totalCustos || 0),
+        };
+      });
+
+      const cm = currentMonthExpenses[0] || {};
 
       res.json({
         indicators: {
@@ -749,9 +808,21 @@ app.use(supplierRouter);
           marketplacesCount: Number(mktCount[0].marketplacesCount),
           semEstoque: Number(prodStats[0].semEstoque),
           estoqueBaixo: Number(prodStats[0].estoqueBaixo),
+          custosOperacionaisMes: Number(cm.custosOperacionais || 0),
+          custosEstoqueMes: Number(cm.custosEstoque || 0),
+          totalDespesasMes: Number(cm.totalDespesas || 0),
         },
-        topProducts,
-        marginsByCategory,
+        topProducts: topProducts.map((p: any) => ({
+          nome: p.nome,
+          qty: Number(p.qty),
+          totalValue: Number(p.totalValue),
+        })),
+        marginsByCategory: marginsByCategory.map((c: any) => ({
+          categoria: c.categoria,
+          margemBruta: Number(Number(c.margemBruta).toFixed(2)),
+          margemLiquida: Number(Number(c.margemLiquida).toFixed(2)),
+          venda: Number(c.venda),
+        })),
         mktStats,
         monthlyEvolution
       });

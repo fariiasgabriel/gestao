@@ -66,6 +66,9 @@ export interface DashboardIndicators {
   marketplacesCount: number;
   estoqueBaixo: number;
   semEstoque: number;
+  custosOperacionaisMes: number;
+  custosEstoqueMes: number;
+  totalDespesasMes: number;
 }
 
 export interface TopProduct {

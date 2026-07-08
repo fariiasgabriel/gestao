@@ -70,7 +70,6 @@ export default function ReportsView() {
 
   const filteredOrders = getFilteredOrders();
 
-  // Automatic Indicator Calculations based on current filters
   const totalPedidos = filteredOrders.length;
   const valorVendido = filteredOrders.reduce((sum, o) => sum + o.valorVenda, 0);
   const lucroBruto = filteredOrders.reduce((sum, o) => sum + o.lucroBruto, 0);
@@ -80,7 +79,6 @@ export default function ReportsView() {
   const margemBruta = valorVendido > 0 ? (lucroBruto / valorVendido) * 100 : 0;
   const margemLiquida = valorVendido > 0 ? (lucroLiquido / valorVendido) * 100 : 0;
 
-  // Stock counts
   const semEstoque = products.filter(p => p.quantidadeEstoque === 0).length;
   const estoqueBaixo = products.filter(p => p.quantidadeEstoque > 0 && p.quantidadeEstoque <= 5).length;
 
@@ -91,7 +89,6 @@ export default function ReportsView() {
     }).format(val);
   };
 
-  // CSV Generator Utility (Semi-colon separated for Brazilian Excel local support)
   const downloadCSV = (filename: string, content: string) => {
     const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -148,7 +145,6 @@ export default function ReportsView() {
 
   return (
     <div className="space-y-8">
-      {/* Search filters row */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
         <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider pb-2 border-b border-slate-100">
           Filtros de Relatório
@@ -169,7 +165,6 @@ export default function ReportsView() {
             </select>
           </div>
 
-          {/* Category */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Categoria</label>
             <select
@@ -195,7 +190,6 @@ export default function ReportsView() {
             />
           </div>
 
-          {/* End date */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Até (Fim)</label>
             <input
@@ -208,9 +202,7 @@ export default function ReportsView() {
         </div>
       </div>
 
-      {/* Dynamic Indicators row calculated instantly */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Vendido */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase block">Faturamento Bruto</span>
@@ -222,7 +214,6 @@ export default function ReportsView() {
           </div>
         </div>
 
-        {/* Lucro Líquido */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase block">Lucro Líquido Real</span>
@@ -234,7 +225,6 @@ export default function ReportsView() {
           </div>
         </div>
 
-        {/* Quantidade Pedidos */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase block">Volume de Pedidos</span>
@@ -246,7 +236,6 @@ export default function ReportsView() {
           </div>
         </div>
 
-        {/* Items vendidos */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase block">Peças Faturadas</span>
@@ -259,7 +248,6 @@ export default function ReportsView() {
         </div>
       </div>
 
-      {/* Spreadsheet downloads panel */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <div className="mb-6">
           <h4 className="font-bold text-slate-800 text-sm">Exportar Planilhas de Produção</h4>
@@ -270,7 +258,6 @@ export default function ReportsView() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           
-          {/* 1. Pedidos */}
           <div className="border border-slate-200 p-5 rounded-xl bg-slate-50 flex flex-col justify-between space-y-4">
             <div>
               <div className="flex items-center gap-2 text-indigo-600 mb-2">
@@ -290,7 +277,6 @@ export default function ReportsView() {
             </button>
           </div>
 
-          {/* 2. Produtos */}
           <div className="border border-slate-200 p-5 rounded-xl bg-slate-50 flex flex-col justify-between space-y-4">
             <div>
               <div className="flex items-center gap-2 text-emerald-600 mb-2">
@@ -330,7 +316,6 @@ export default function ReportsView() {
             </button>
           </div>
 
-          {/* 4. Marketplaces */}
           <div className="border border-slate-200 p-5 rounded-xl bg-slate-50 flex flex-col justify-between space-y-4">
             <div>
               <div className="flex items-center gap-2 text-amber-600 mb-2">
