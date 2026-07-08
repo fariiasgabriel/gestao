@@ -29,7 +29,7 @@ public class ExpenseRequestDTO {
 
     private BigDecimal valor;
 
-    private LocalDateTime data;
+    private java.time.OffsetDateTime data;
 
     private NewProductDTO newProduct;
 }
