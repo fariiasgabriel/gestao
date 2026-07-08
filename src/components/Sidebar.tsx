@@ -56,8 +56,8 @@ export default function Sidebar({ currentView, onNavigate, onLogout, isOpen = tr
       )}
 
       <div className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        w-64 bg-slate-900 text-slate-100 flex flex-col h-[100dvh] lg:h-screen border-r border-slate-800
+        fixed inset-y-0 left-0 z-50
+        w-64 bg-slate-900 text-slate-100 flex flex-col h-[100dvh] border-r border-slate-800
         transition-transform duration-300 ease-in-out
         ${isOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0 lg:transition-none
