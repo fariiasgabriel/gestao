@@ -49,6 +49,38 @@ public class OrderController {
         }
     }
 
+    @PutMapping("/{id}")
+    @Operation(summary = "Atualizar pedido")
+    public ResponseEntity<?> updateOrder(@PathVariable Long id, @Valid @RequestBody OrderBatchRequestDTO batchDto) {
+        try {
+            if (batchDto.getItems() == null || batchDto.getItems().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("O pedido deve ter pelo menos um item");
+            }
+            
+            // O frontend manda em lote até na edição, mas a edição de um ID específico se aplica ao primeiro item da lista
+            OrderBatchRequestDTO.OrderBatchItemDTO item = batchDto.getItems().get(0);
+            
+            OrderRequestDTO dto = OrderRequestDTO.builder()
+                .produtoId(item.getProdutoId())
+                .marketplaceId(batchDto.getMarketplaceId())
+                .quantidade(item.getQuantidade())
+                .valorVenda(item.getValorVenda())
+                .comissaoTipo(batchDto.getComissaoTipo())
+                .comissaoInformada(batchDto.getComissaoInformada())
+                .frete(batchDto.getFrete())
+                .taxaFixa(batchDto.getTaxaFixa())
+                .build();
+                
+            OrderResponseDTO updated = orderService.update(id, dto);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Erro ao atualizar pedido: " + ex.getMessage());
+        }
+    }
+
     @DeleteMapping("/{id}")
     @Operation(summary = "Excluir/Estornar pedido (devolve quantidade ao estoque)")
     public ResponseEntity<?> deleteOrder(@PathVariable Long id) {

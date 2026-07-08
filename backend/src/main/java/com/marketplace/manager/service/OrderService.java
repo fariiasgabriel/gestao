@@ -141,6 +141,83 @@ public class OrderService {
         }
 
         @Transactional
+        public OrderResponseDTO update(Long id, OrderRequestDTO dto) {
+                Order order = orderRepository.findById(id)
+                                .orElseThrow(() -> new RuntimeException("Pedido não encontrado com o ID: " + id));
+
+                // Reverter estoque do produto antigo
+                Product oldProduct = order.getProduct();
+                oldProduct.setQuantidadeEstoque(oldProduct.getQuantidadeEstoque() + order.getQuantidade());
+                productRepository.save(oldProduct);
+
+                // Buscar novo produto
+                Product newProduct = productRepository.findById(dto.getProdutoId())
+                                .orElseThrow(() -> new RuntimeException("Produto não encontrado com o ID: " + dto.getProdutoId()));
+
+                Marketplace marketplace = marketplaceRepository.findById(dto.getMarketplaceId())
+                                .orElseThrow(() -> new RuntimeException("Marketplace não encontrado com o ID: " + dto.getMarketplaceId()));
+
+                Category category = newProduct.getCategory();
+
+                if (newProduct.getQuantidadeEstoque() < dto.getQuantidade()) {
+                        throw new IllegalArgumentException(
+                                        "Estoque insuficiente para o produto \"" + newProduct.getNome() +
+                                                        "\". Estoque atual: " + newProduct.getQuantidadeEstoque()
+                                                        + ". Solicitado: " + dto.getQuantidade());
+                }
+
+                BigDecimal valorVenda = dto.getValorVenda();
+                BigDecimal frete = dto.getFrete();
+                BigDecimal taxaFixa = dto.getTaxaFixa();
+                BigDecimal comissaoInformada = dto.getComissaoInformada();
+
+                BigDecimal comissaoValor;
+                if ("PERCENTUAL".equalsIgnoreCase(dto.getComissaoTipo())) {
+                        comissaoValor = comissaoInformada.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+                                        .multiply(valorVenda)
+                                        .setScale(2, RoundingMode.HALF_UP);
+                } else {
+                        comissaoValor = comissaoInformada.setScale(2, RoundingMode.HALF_UP);
+                }
+
+                BigDecimal lucroBruto = valorVenda.subtract(frete).subtract(taxaFixa).subtract(comissaoValor).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal custoTotal = newProduct.getCusto().multiply(BigDecimal.valueOf(dto.getQuantidade()));
+                BigDecimal lucroLiquido = lucroBruto.subtract(custoTotal).setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal margemBruta = BigDecimal.ZERO;
+                BigDecimal margemLiquida = BigDecimal.ZERO;
+                if (valorVenda.compareTo(BigDecimal.ZERO) > 0) {
+                        margemBruta = lucroBruto.divide(valorVenda, 4, RoundingMode.HALF_UP)
+                                        .multiply(BigDecimal.valueOf(100))
+                                        .setScale(2, RoundingMode.HALF_UP);
+                        margemLiquida = lucroLiquido.divide(valorVenda, 4, RoundingMode.HALF_UP)
+                                        .multiply(BigDecimal.valueOf(100))
+                                        .setScale(2, RoundingMode.HALF_UP);
+                }
+
+                // Atualizar novo estoque
+                newProduct.setQuantidadeEstoque(newProduct.getQuantidadeEstoque() - dto.getQuantidade());
+                productRepository.save(newProduct);
+
+                // Atualizar dados do pedido
+                order.setProduct(newProduct);
+                order.setCategory(category);
+                order.setMarketplace(marketplace);
+                order.setQuantidade(dto.getQuantidade());
+                order.setValorVenda(valorVenda);
+                order.setComissaoTipo(dto.getComissaoTipo().toUpperCase());
+                order.setComissaoValor(comissaoValor);
+                order.setFrete(frete);
+                order.setTaxaFixa(taxaFixa);
+                order.setLucroBruto(lucroBruto);
+                order.setLucroLiquido(lucroLiquido);
+                order.setMargemBruta(margemBruta);
+                order.setMargemLiquida(margemLiquida);
+
+                return convertToDTO(orderRepository.save(order));
+        }
+
+        @Transactional
         public void delete(Long id) {
                 Order order = orderRepository.findById(id)
                                 .orElseThrow(() -> new RuntimeException("Pedido não encontrado com o ID: " + id));

@@ -292,7 +292,18 @@ export default function OrdersView() {
     setFrete(String(order.frete));
     setTaxaFixa(String(order.taxaFixa));
 
-    const orderItems = order.items || [];
+    let orderItems = order.items;
+    if (!orderItems || orderItems.length === 0) {
+      // Backend retorna pedido "achatado" (1 item por pedido)
+      orderItems = [{
+        produtoId: order.produtoId,
+        quantidade: order.quantidade,
+        valorVenda: order.valorVenda,
+        produtoNome: order.produtoNome || "Produto Removido",
+        produtoCusto: order.produtoCusto || 0
+      }];
+    }
+
     setItemsList(orderItems.map((item: any) => ({
       produtoId: item.produtoId,
       quantidade: item.quantidade,
