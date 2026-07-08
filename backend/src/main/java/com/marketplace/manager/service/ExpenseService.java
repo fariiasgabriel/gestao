@@ -56,7 +56,7 @@ public class ExpenseService {
             expense.setSupplier(supplier);
         }
 
-        expense.setData(dto.getData() != null ? dto.getData().toLocalDateTime() : LocalDateTime.now());
+        expense.setData(dto.getData() != null ? dto.getData().atStartOfDay() : LocalDateTime.now());
 
         if ("PRODUTO".equals(dto.getTipo())) {
             if (dto.getQuantidade() == null || dto.getQuantidade() <= 0) {

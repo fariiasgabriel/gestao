@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -29,7 +29,7 @@ public class ExpenseRequestDTO {
 
     private BigDecimal valor;
 
-    private java.time.OffsetDateTime data;
+    private LocalDate data;
 
     private NewProductDTO newProduct;
 }
